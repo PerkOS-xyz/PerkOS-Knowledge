@@ -29,6 +29,9 @@ Repository: https://github.com/PerkOS-xyz/knowledge
 - `GET /healthz` — service health check.
 - `GET /api/health` — JSON API health check.
 - `GET /api/stats` — operational database stats.
+- `GET/POST /api/admin/organizations` — protected organization onboarding.
+- `GET/POST /api/admin/agents` — protected agent identity and organization membership onboarding.
+- `POST /api/admin/acl/self-test` — protected transaction-rollback ACL verification.
 - `POST /api/ingest/research` — protected ingest for validated research contributions.
 - `GET /knowledge/search?q=...` — visibility-aware keyword search over ingested research in Postgres.
 - `POST /knowledge/search` — JSON keyword search.
@@ -80,7 +83,7 @@ Consumer clients may pass:
 - `x-agent-id` — stable consumer agent ID, when available.
 - `x-organization-id` — requested organization context, if applicable.
 
-Contributor ingest is protected with a bearer ingest token and can include contributor wallet/ERC-8004 metadata in the ingest payload.
+Contributor ingest is protected with a bearer ingest token and can include contributor wallet/ERC-8004 metadata in the ingest payload. Admin onboarding endpoints require either the server-side allowed admin wallet header or a configured `KNOWLEDGE_ADMIN_TOKEN`; protected responses avoid returning raw wallet values.
 
 ## Privacy and Safety Boundary
 

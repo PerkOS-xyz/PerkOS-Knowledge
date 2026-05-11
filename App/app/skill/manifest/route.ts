@@ -10,6 +10,7 @@ export async function GET() {
     auth: {
       consumer: ['wallet', 'erc8004_identity', 'x402_receipt_planned'],
       contributor: ['bearer_ingest_token', 'wallet', 'erc8004_identity'],
+      admin: ['x-admin-wallet allowlist', 'optional KNOWLEDGE_ADMIN_TOKEN bearer'],
     },
     visibility: ['public', 'private'],
     endpoints: {
@@ -18,6 +19,9 @@ export async function GET() {
       keywordSearch: 'GET/POST /knowledge/search',
       vectorSearch: 'GET/POST /knowledge/vector-search',
       stats: 'GET /api/stats',
+      adminOrganizations: 'GET/POST /api/admin/organizations',
+      adminAgents: 'GET/POST /api/admin/agents',
+      adminAclSelfTest: 'POST /api/admin/acl/self-test',
     },
     headers: {
       consumerWallet: 'x-agent-wallet',
