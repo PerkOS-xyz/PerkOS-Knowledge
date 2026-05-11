@@ -1,6 +1,6 @@
 import { getAccessContext, readableKnowledgeWhere, recordUsage, requestId, sanitizeKnowledgeRow, visibilityCounts } from '../../../lib/access';
 import { withDb } from '../../../lib/db';
-import { getX402Policy, inspectX402Request, publicX402, resolveX402Tier, storeX402Receipt } from '../../../lib/x402';
+import { getX402Policy, inspectX402Request, isX402Satisfied, publicX402, resolveX402Tier, storeX402Receipt, verifyX402WithFacilitator } from '../../../lib/x402';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,9 +19,10 @@ export async function POST(request: Request) {
     const requestedOrg = Boolean(request.headers.get('x-organization-id') || request.headers.get('x-org-id'));
     const tier = resolveX402Tier({ requestedTier: body.tier || body.scope, hasOrganizationScope: requestedOrg || access.organizationIds.length > 0, mode });
     const policy = getX402Policy('/skill/query', tier);
-    const x402 = inspectX402Request(request, policy);
+    const inspected = inspectX402Request(request, policy);
+    const x402 = await verifyX402WithFacilitator(inspected, policy);
 
-    if (policy.required && x402.status !== 'received') {
+    if (!isX402Satisfied(policy, x402)) {
       return { paymentRequired: true as const, policy, x402, rows: [] };
     }
     const params: unknown[] = [query];
