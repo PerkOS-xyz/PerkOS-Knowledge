@@ -42,7 +42,7 @@ export default async function AdminDashboard() {
         <section className="dashHero">
           <p className="eyebrow">Admin dashboard</p>
           <h1>Accumulated knowledge database.</h1>
-          <p className="lead">Live view of Perky research synchronized into Postgres and Qdrant.</p>
+          <p className="lead">Live view of curated research synchronized into Postgres and Qdrant.</p>
         </section>
 
         <section className="metricsGrid">
