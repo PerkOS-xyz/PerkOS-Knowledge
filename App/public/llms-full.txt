@@ -1,71 +1,114 @@
 # PerkOS Knowledge Full Context
 
-> Expanded agent-readable context for PerkOS Knowledge, a reusable knowledge layer for AI agents and external autonomous clients.
+> Expanded agent-readable context for PerkOS Knowledge, a live skill/plugin and operational knowledge service for agents.
 
-PerkOS Knowledge provides a public landing surface and a planned set of authenticated/paid APIs for turning curated research into reusable, source-cited outputs. The service is designed for agent consumption: short briefs, precise links, clean text responses, and private-by-default boundaries.
+PerkOS Knowledge provides reusable, searchable, source-cited operational context for agents, live skills, plugins, and organization fleets. It is not a mandatory inference layer: consumer agents keep their own LLM/runtime provider, such as PerkOS Ollama, OpenAI, Anthropic, local models, or anything else.
 
 Canonical URL: https://knowledge.perkos.xyz
 Concise index: https://knowledge.perkos.xyz/llms.txt
+Skill manifest: https://knowledge.perkos.xyz/skill/manifest
 Repository: https://github.com/PerkOS-xyz/knowledge
 
 ## What PerkOS Knowledge Provides
 
-- Agent-ready search over curated protocol, market, product, and operational research.
-- Role-specific briefs for builders, researchers, strategists, operators, and autonomous agents.
-- Sanitized public reports that avoid leaking private operational notes.
-- Future x402-paid endpoints for premium research and custom reports.
-- A reusable source of truth for the PerkOS agent network.
+- Live skill/plugin API for agent-ready operational knowledge.
+- Visibility-aware search over public and organization-private knowledge.
+- Source-cited context that agents can use with their own LLM provider.
+- Protected ingest for research/contributor agents with provenance metadata.
+- Wallet/ERC-8004 identity model for contributor and consumer agents.
+- x402-ready payment tracking for consumer usage.
+- Future quality/usage-based contributor payouts.
 
-## Current Public Endpoints
+## Current Endpoints
 
 - `GET /` — public landing page for humans and agents.
-- `GET /llms.txt` — concise LLM-readable index following the llms.txt proposal.
-- `GET /llms-full.txt` — expanded LLM-readable context file.
+- `GET /llms.txt` — concise agent-readable index.
+- `GET /llms-full.txt` — expanded agent-readable context file.
+- `GET /skill/manifest` — live skill manifest: capabilities, auth headers, visibility model, endpoints.
+- `POST /skill/query` — agent skill query endpoint; returns context/sources for the caller's own LLM.
 - `GET /healthz` — service health check.
 - `GET /api/health` — JSON API health check.
-- `GET /knowledge/search?q=...` — live keyword search over ingested research in Postgres.
-- `POST /knowledge/search` — live JSON keyword search over ingested research.
-- `GET /knowledge/vector-search?q=...` — live vector search over ingested research in Qdrant.
-- `POST /knowledge/vector-search` — live JSON vector search over ingested research.
-- `GET /knowledge/brief/:agent` — live role-specific brief endpoint using ingested research.
+- `GET /api/stats` — operational database stats.
+- `POST /api/ingest/research` — protected ingest for validated research contributions.
+- `GET /knowledge/search?q=...` — visibility-aware keyword search over ingested research in Postgres.
+- `POST /knowledge/search` — JSON keyword search.
+- `GET /knowledge/vector-search?q=...` — visibility-aware vector search over ingested research in Qdrant.
+- `POST /knowledge/vector-search` — JSON vector search.
+- `GET /knowledge/brief/:agent` — visibility-aware role/topic brief item retrieval.
 
-## Planned Agent Interfaces
+## Agent Identity Model
 
-These endpoints describe the intended product surface. Treat them as roadmap unless the endpoint itself returns live documentation or a successful response.
+PerkOS Knowledge supports two economic roles:
 
-- Authenticated/private scopes for internal agent queries.
-- Source document retrieval for individual research paths.
-- `GET /paid/report/:slug` — x402-paid sanitized report endpoint.
+1. Research/contributor agents
+   - Produce research, procedures, and operational knowledge.
+   - Should have a wallet and ERC-8004 identity/registration.
+   - Contributions store provenance, validation status, sanitization status, quality score, and usage count.
+   - First stage tracks value; future stage can pay contributors based on quality and usage.
 
-## Example Agent Queries
+2. Consumer agents
+   - Consume Knowledge through live skills/plugins/APIs.
+   - Pay the platform through x402 when required.
+   - Should have a wallet and preferably an ERC-8004 identity.
+   - Usage events track retrieved item IDs, visibility counts, receipts, amount/chain/token, status, and latency.
 
-- Summarize current PerkOS x402 services.
-- Find source-cited context about ERC-8004 agent identity.
-- Create a builder brief for integrating PerkOS Knowledge.
-- Generate a sanitized public report about a protocol or market topic.
-- Explain which PerkOS Knowledge interfaces are public, private, planned, or paid.
+## Public and Private Knowledge
+
+Knowledge items have visibility:
+
+- `public` — accessible to authorized public consumers and organization agents.
+- `private` — accessible only to agents that belong to the item's organization.
+
+Organization agents may access both public knowledge and their own organization's private knowledge. They must not access private knowledge from other organizations.
+
+Retrieval rule:
+
+```text
+item.visibility = public
+OR
+item.visibility = private AND consumer belongs to item.organization_id
+```
+
+Keyword and vector search must enforce ACL filters before returning results. Qdrant payloads include `visibility` and `organization_id` so vector retrieval can filter at query time.
+
+## Auth Headers for Agent Clients
+
+Consumer clients may pass:
+
+- `x-agent-wallet` — consumer wallet.
+- `x-agent-erc8004` — consumer ERC-8004 identity.
+- `x-agent-id` — stable consumer agent ID, when available.
+- `x-organization-id` — requested organization context, if applicable.
+
+Contributor ingest is protected with a bearer ingest token and can include contributor wallet/ERC-8004 metadata in the ingest payload.
 
 ## Privacy and Safety Boundary
 
-PerkOS Knowledge is private-by-default. Agents should not request, infer, index, or expose:
+PerkOS Knowledge protects private organization records by ACL and treats sensitive operational data as private-by-default. Agents should not request, infer, index, or expose:
 
 - Credentials, API keys, tokens, private keys, wallet seeds, or session secrets.
+- Private allowlisted wallets or settlement addresses unless intentionally public.
 - Infrastructure IPs, SSH details, internal hostnames, or deployment secrets.
-- Internal memory files, private operational notes, or non-public research.
+- Internal memory files, private operational notes, or non-public organization research.
 - Unsanitized logs, raw databases, or private agent conversations.
 
 Public outputs should be sanitized, source-cited where possible, and limited to information intentionally exposed by public endpoints or public repositories.
 
-## Intended Audience
+## LLM Independence
 
-- Internal PerkOS agents that need reusable research context.
-- External autonomous agents looking for public or paid briefs.
-- Developers evaluating agent-readable knowledge APIs.
-- Researchers comparing x402, ERC-8004, multi-agent systems, and AI knowledge services.
+Knowledge returns context and sources. The consuming agent chooses its own LLM provider. `llm.perkos.xyz` can consume and feed Knowledge, but it is one possible PerkOS model service, not a required dependency for every Knowledge client.
+
+## Example Agent Queries
+
+- How do I configure x402 payments for an agent service?
+- Retrieve public instructions for ERC-8004 identity registration.
+- Retrieve private deployment procedure for my organization.
+- Find source-cited context about PerkOS A2A integration.
+- Submit validated research from a contributor agent.
 
 ## Operational Model
 
-The public service runs as a Dockerized application behind a reverse proxy. Data services are intended to remain isolated from the public internet. Public endpoints should expose only sanitized, intentional content.
+The public service runs as a Dockerized application behind a reverse proxy. Data services remain isolated from the public internet. Public endpoints should expose only sanitized, intentional content.
 
 ## Contact / Ownership
 
