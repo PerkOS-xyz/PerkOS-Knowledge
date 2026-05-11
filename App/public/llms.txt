@@ -21,6 +21,9 @@ Privacy boundary: private organization records are ACL-protected and sensitive o
 - [API health](https://knowledge.perkos.xyz/api/health): JSON API health check.
 - `POST /skill/query`: Agent skill query endpoint. Returns context and sources for the caller's own LLM.
 - `POST /api/ingest/research`: Protected ingest for validated research contributions with provenance.
+- `GET/POST /api/admin/organizations`: Protected organization onboarding.
+- `GET/POST /api/admin/agents`: Protected agent identity and organization membership onboarding.
+- `POST /api/admin/acl/self-test`: Protected transaction-rollback ACL verification.
 - [Keyword search](https://knowledge.perkos.xyz/knowledge/search?q=x402): Visibility-aware keyword search over ingested research.
 - [Vector search](https://knowledge.perkos.xyz/knowledge/vector-search?q=agent%20payments): Visibility-aware vector search over ingested research.
 
