@@ -196,14 +196,24 @@ export async function verifyX402WithFacilitator(x402: X402Request, policy: X402P
       }),
     });
     const data = await res.json().catch(() => ({ ok: false, status: res.status }));
-    const valid = res.ok && (data.valid === true || data.ok === true || data.verified === true);
+    const valid = res.ok && (data.valid === true || data.ok === true || data.verified === true || data.isValid === true);
+    const invalidReason = typeof data.invalidReason === 'string' ? data.invalidReason : typeof data.reason === 'string' ? data.reason : null;
     return {
       ...x402,
       status: valid ? 'verified' : 'verification_failed',
       verification: {
         httpStatus: res.status,
         valid,
-        response: data,
+        invalidReason,
+        payerPresent: Boolean(data.payer),
+        responseShape: {
+          hasValid: typeof data.valid !== 'undefined',
+          hasOk: typeof data.ok !== 'undefined',
+          hasVerified: typeof data.verified !== 'undefined',
+          hasIsValid: typeof data.isValid !== 'undefined',
+          hasInvalidReason: typeof data.invalidReason !== 'undefined',
+          hasPayer: typeof data.payer !== 'undefined',
+        },
       },
     };
   } catch (error) {
