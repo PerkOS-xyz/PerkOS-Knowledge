@@ -46,26 +46,31 @@ export default async function AdminDashboard() {
         <section className="dashHero">
           <p className="eyebrow">Admin dashboard</p>
           <h1>Operational knowledge database.</h1>
-          <p className="lead">Only live database counts are shown here. No simulated agent activity, fake usage, or generated content previews.</p>
+          <p className="lead">Live operational counts with visibility-aware storage. Private organization records remain ACL-filtered at query time.</p>
         </section>
 
         <section className="metricsGrid">
           <article className="metric"><span>Total records</span><strong>{stats.totalItems}</strong></article>
-          <article className="metric"><span>Sources</span><strong>{stats.bySource.length}</strong></article>
+          <article className="metric"><span>Visibility classes</span><strong>{stats.byVisibility.length}</strong></article>
           <article className="metric"><span>Tracks</span><strong>{stats.byTrack.length}</strong></article>
           <article className="metric"><span>Last sync</span><strong>{lastSync}</strong></article>
         </section>
 
         <section className="dashGrid three">
+          <Buckets title="Visibility" rows={stats.byVisibility} />
           <Buckets title="Sources" rows={stats.bySource} />
           <Buckets title="Tracks" rows={stats.byTrack} />
+        </section>
+
+        <section className="dashGrid two">
           <Buckets title="Chains" rows={stats.byChain} />
+          <Buckets title="Private org buckets" rows={stats.privateByOrg} />
         </section>
 
         <section className="dashPanel wide">
-          <p className="eyebrow">Data policy</p>
-          <h2>Real records only.</h2>
-          <p className="body">This view intentionally hides agent-attribution charts and latest narrative previews because the current schema stores tags and summaries, not verified agent contributions or audited user activity.</p>
+          <p className="eyebrow">Access policy</p>
+          <h2>Public + organization-private knowledge.</h2>
+          <p className="body">Public records can be consumed by authorized clients. Private records require organization membership and are filtered before keyword or vector results are returned. This view intentionally avoids contributor wallets, agent-attribution charts, and narrative previews.</p>
         </section>
       </main>
     </WalletGate>

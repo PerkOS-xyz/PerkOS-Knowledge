@@ -13,6 +13,11 @@ export type VectorItem = {
   agents?: string[];
   chains?: string[];
   summary?: string | null;
+  visibility: 'public' | 'private';
+  organization_id?: string | null;
+  contributor_agent_id?: string | null;
+  validation_status?: string | null;
+  sanitization_status?: string | null;
 };
 
 function qdrantUrl() {
@@ -94,15 +99,18 @@ export async function upsertVectors(items: VectorItem[]) {
   return { ok: true, collection: COLLECTION, upserted: points.length };
 }
 
-export async function searchVectors(query: string, limit = 10) {
+export async function searchVectors(query: string, limit = 10, filter?: unknown) {
   const base = qdrantUrl();
   if (!base) return { ok: false, skipped: true, results: [] };
 
   await ensureVectorCollection();
+  const body: Record<string, unknown> = { vector: embedText(query), limit, with_payload: true };
+  if (filter) body.filter = filter;
+
   const res = await fetch(`${base}/collections/${COLLECTION}/points/search`, {
     method: 'POST',
     headers: headers(),
-    body: JSON.stringify({ vector: embedText(query), limit, with_payload: true }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) return { ok: false, error: await res.text(), results: [] };
