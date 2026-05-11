@@ -52,3 +52,40 @@ pre { margin: 0; padding: 28px; color: #d9fff1; font-size: 15px; line-height: 1.
 code { color: var(--accent); background: rgba(124,247,200,.08); padding: 5px 8px; border-radius: 8px; }
 .cta { margin-bottom: 70px; padding: 54px; border-radius: 32px; border: 1px solid var(--line); background: linear-gradient(135deg, rgba(124,247,200,.13), rgba(154,167,255,.12)); }
 @media (max-width: 860px) { .heroGrid, .split, .features { grid-template-columns: 1fr; } .nav { margin-bottom: 64px; } .hero { min-height: auto; } }
+
+.dashShell { width: min(1180px, calc(100% - 36px)); margin: 0 auto; padding: 28px 0 70px; }
+.dashNav { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 56px; }
+.dashLinks { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.dashLinks a { border: 1px solid var(--line); border-radius: 999px; padding: 9px 12px; color: var(--muted); background: rgba(255,255,255,.04); font-weight: 700; }
+.dashHero { padding: 42px 0 34px; }
+.dashHero.compact { max-width: 820px; min-height: 60vh; display: flex; flex-direction: column; justify-content: center; }
+.dashHero h1 { font-size: clamp(46px, 7vw, 78px); max-width: 930px; }
+.metricsGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 20px 0 28px; }
+.metric { border: 1px solid var(--line); border-radius: 24px; padding: 22px; background: var(--panel); }
+.metric span, .paymentBox span, .mutedSmall { display: block; color: var(--muted); font-size: 13px; font-weight: 750; letter-spacing: .04em; }
+.metric strong { display: block; margin-top: 10px; font-size: clamp(26px, 4vw, 42px); letter-spacing: -0.05em; }
+.dashGrid { display: grid; gap: 16px; margin-top: 16px; }
+.dashGrid.two { grid-template-columns: 1.15fr .85fr; }
+.dashGrid.three { grid-template-columns: repeat(3, 1fr); }
+.dashPanel { border: 1px solid var(--line); border-radius: 28px; background: linear-gradient(180deg, rgba(255,255,255,.09), rgba(255,255,255,.045)); padding: 24px; box-shadow: 0 28px 90px rgba(0,0,0,.18); }
+.dashPanel.wide { margin-top: 16px; }
+.panelHead { display: flex; justify-content: space-between; gap: 16px; align-items: start; }
+.tableList, .itemList { display: grid; gap: 12px; margin-top: 18px; }
+.tableRow { display: grid; grid-template-columns: 1fr auto auto; gap: 14px; align-items: center; border-top: 1px solid var(--line); padding: 14px 0; }
+.tableRow span, .tableRow code { color: var(--muted); }
+.tableRow div span { display: block; margin-top: 4px; }
+.paymentBox { display: grid; gap: 12px; margin-top: 24px; }
+.paymentBox div { border: 1px solid var(--line); border-radius: 18px; padding: 18px; background: rgba(255,255,255,.045); }
+.paymentBox strong { display: block; margin-top: 8px; font-size: 28px; }
+.walletBox { display: flex; gap: 12px; margin-top: 28px; flex-wrap: wrap; }
+.walletBox input { flex: 1; min-width: 280px; border: 1px solid var(--line); border-radius: 999px; padding: 15px 18px; background: rgba(255,255,255,.07); color: var(--text); font: inherit; }
+.walletBox button { border: 0; border-radius: 999px; padding: 15px 20px; background: var(--accent); color: #04100c; font-weight: 900; cursor: pointer; }
+.bars { display: grid; gap: 12px; margin-top: 20px; }
+.barRow { display: grid; grid-template-columns: 90px 1fr 36px; gap: 10px; align-items: center; color: var(--muted); }
+.barRow div { height: 10px; background: rgba(255,255,255,.08); border-radius: 99px; overflow: hidden; }
+.barRow i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius: 99px; }
+.itemList article { border-top: 1px solid var(--line); padding: 18px 0; }
+.itemMeta, .chips { display: flex; gap: 8px; flex-wrap: wrap; color: var(--muted); font-size: 13px; }
+.itemList p { color: var(--muted); line-height: 1.6; }
+.chips { margin-top: 12px; }
+@media (max-width: 900px) { .metricsGrid, .dashGrid.two, .dashGrid.three { grid-template-columns: 1fr; } .tableRow { grid-template-columns: 1fr; } .dashNav, .panelHead { align-items: flex-start; flex-direction: column; } }
