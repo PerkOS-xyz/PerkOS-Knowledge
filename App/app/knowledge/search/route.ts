@@ -1,4 +1,4 @@
-import { getAccessContext, readableKnowledgeWhere, recordUsage, requestId, visibilityCounts } from '../../../lib/access';
+import { getAccessContext, readableKnowledgeWhere, recordUsage, requestId, sanitizeKnowledgeRow, visibilityCounts } from '../../../lib/access';
 import { withDb } from '../../../lib/db';
 
 export const dynamic = 'force-dynamic';
@@ -59,7 +59,7 @@ export async function GET(request: Request) {
     query: q || null,
     agent: agent || null,
     count: response.rows.length,
-    results: response.rows,
+    results: response.rows.map(sanitizeKnowledgeRow),
   });
 }
 
