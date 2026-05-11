@@ -1,6 +1,6 @@
 import { getAccessContext, readableKnowledgeWhere, recordUsage, requestId, sanitizeKnowledgeRow, visibilityCounts } from '../../../lib/access';
 import { withDb } from '../../../lib/db';
-import { getX402Policy, inspectX402Request, publicX402, storeX402Receipt } from '../../../lib/x402';
+import { getX402Policy, inspectX402Request, publicX402, resolveX402Tier, storeX402Receipt } from '../../../lib/x402';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,16 +11,19 @@ export async function POST(request: Request) {
   const query = String(body.query || body.question || '').trim();
   const limit = Math.min(Number(body.limit || 8), 25);
   const mode = String(body.mode || 'context');
-  const policy = getX402Policy('/skill/query');
-  const x402 = inspectX402Request(request, policy);
 
   if (!query) return Response.json({ ok: false, error: 'query_required' }, { status: 400 });
-  if (policy.required && x402.status !== 'received') {
-    return Response.json({ ok: false, error: 'payment_required', x402: publicX402(policy, x402) }, { status: 402 });
-  }
 
   const result = await withDb(async (client) => {
     const access = await getAccessContext(client, request);
+    const requestedOrg = Boolean(request.headers.get('x-organization-id') || request.headers.get('x-org-id'));
+    const tier = resolveX402Tier({ requestedTier: body.tier || body.scope, hasOrganizationScope: requestedOrg || access.organizationIds.length > 0, mode });
+    const policy = getX402Policy('/skill/query', tier);
+    const x402 = inspectX402Request(request, policy);
+
+    if (policy.required && x402.status !== 'received') {
+      return { paymentRequired: true as const, policy, x402, rows: [] };
+    }
     const params: unknown[] = [query];
     const acl = readableKnowledgeWhere(access, params);
     acl.params.push(limit);
@@ -52,17 +55,21 @@ export async function POST(request: Request) {
       paymentToken: policy.price.token,
     });
 
-    return res.rows;
+    return { paymentRequired: false as const, policy, x402, rows: res.rows };
   });
+
+  if (result.paymentRequired) {
+    return Response.json({ ok: false, error: 'payment_required', x402: publicX402(result.policy, result.x402) }, { status: 402 });
+  }
 
   return Response.json({
     ok: true,
     requestId: id,
     mode,
     query,
-    count: result.length,
-    context: result.map(sanitizeKnowledgeRow),
-    x402: publicX402(policy, x402),
+    count: result.rows.length,
+    context: result.rows.map(sanitizeKnowledgeRow),
+    x402: publicX402(result.policy, result.x402),
     guidance: 'Use this context with your own LLM/runtime. Knowledge does not require a specific model provider.',
   });
 }

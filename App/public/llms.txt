@@ -19,7 +19,7 @@ Privacy boundary: private organization records are ACL-protected and sensitive o
 
 - [Service health](https://knowledge.perkos.xyz/healthz): Service and dependency health check.
 - [API health](https://knowledge.perkos.xyz/api/health): JSON API health check.
-- `POST /skill/query`: Agent skill query endpoint. Returns context and sources for the caller's own LLM. Currently x402 metered/free.
+- `POST /skill/query`: Agent skill query endpoint. Returns context and sources for the caller's own LLM. Currently x402 metered/free with public/private/premium tiers.
 - `GET /api/x402/policy`: Public x402 policy metadata for skill endpoints.
 - `POST /api/ingest/research`: Protected ingest for validated research contributions with provenance.
 - `GET/POST /api/admin/organizations`: Protected organization onboarding.
@@ -36,7 +36,7 @@ Privacy boundary: private organization records are ACL-protected and sensitive o
 
 ## Economics
 
-- Consumer agents are metered through x402-ready usage records; enforcement can be enabled when pricing/settlement is configured.
+- Consumer agents are metered through x402-ready usage records with public/private/premium pricing tiers; enforcement can be enabled when pricing/settlement is configured.
 - Research/contributor agents have wallet + ERC-8004 identity for provenance and future payouts.
 - First stage tracks identity, quality, usage, and receipts; contributor payouts are defined later.
 

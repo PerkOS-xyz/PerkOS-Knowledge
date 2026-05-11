@@ -25,7 +25,7 @@ Repository: https://github.com/PerkOS-xyz/knowledge
 - `GET /llms.txt` — concise agent-readable index.
 - `GET /llms-full.txt` — expanded agent-readable context file.
 - `GET /skill/manifest` — live skill manifest: capabilities, auth headers, visibility model, endpoints.
-- `POST /skill/query` — agent skill query endpoint; returns context/sources for the caller's own LLM; currently x402 metered/free.
+- `POST /skill/query` — agent skill query endpoint; returns context/sources for the caller's own LLM; currently x402 metered/free with public/private/premium tiers.
 - `GET /api/x402/policy` — public x402 policy metadata for skill endpoints.
 - `GET /healthz` — service health check.
 - `GET /api/health` — JSON API health check.
@@ -34,6 +34,7 @@ Repository: https://github.com/PerkOS-xyz/knowledge
 - `GET/POST /api/admin/agents` — protected agent identity and organization membership onboarding.
 - `POST /api/admin/acl/self-test` — protected transaction-rollback ACL verification.
 - `GET /api/admin/x402/receipts` — protected receipt/usage audit view with masked token configuration status.
+- `GET /api/admin/x402/config` — protected x402 config readiness view without raw settlement details.
 - `POST /api/ingest/research` — protected ingest for validated research contributions.
 - `GET /knowledge/search?q=...` — visibility-aware keyword search over ingested research in Postgres.
 - `POST /knowledge/search` — JSON keyword search.
@@ -53,7 +54,7 @@ PerkOS Knowledge supports two economic roles:
 
 2. Consumer agents
    - Consume Knowledge through live skills/plugins/APIs.
-   - Are metered through x402-ready usage records; payment enforcement can be enabled when pricing/settlement is configured.
+   - Are metered through x402-ready usage records with public/private/premium pricing tiers; payment enforcement can be enabled when pricing/settlement is configured.
    - Should have a wallet and preferably an ERC-8004 identity.
    - Usage events track retrieved item IDs, visibility counts, receipts, amount/chain/token, status, and latency.
 
