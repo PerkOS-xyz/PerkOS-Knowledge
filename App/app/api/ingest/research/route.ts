@@ -1,4 +1,5 @@
 import { withDb } from '../../../../lib/db';
+import { upsertVectors, type VectorItem } from '../../../../lib/vector';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +34,8 @@ export async function POST(request: Request) {
     return Response.json({ ok: false, error: 'items_required' }, { status: 400 });
   }
 
+  const vectorItems: VectorItem[] = [];
+
   const result = await withDb(async (client) => {
     let upserted = 0;
     for (const item of items) {
@@ -40,6 +43,19 @@ export async function POST(request: Request) {
       const title = String(item.title || path || 'Untitled').trim();
       if (!path) continue;
       const id = `${source}:${path}`;
+      const vectorItem: VectorItem = {
+        id,
+        source,
+        date: item.date || null,
+        track: item.track || null,
+        title,
+        path,
+        agents: item.agents || [],
+        chains: item.chains || [],
+        summary: item.summary || null,
+      };
+      vectorItems.push(vectorItem);
+
       await client.query(
         `INSERT INTO research_items
           (id, source, date, track, title, path, agents, chains, status, confidence, summary, raw, updated_at)
@@ -78,5 +94,7 @@ export async function POST(request: Request) {
     return { upserted, total: count.rows[0].count };
   });
 
-  return Response.json({ ok: true, source, ...result, ts: new Date().toISOString() });
+  const vector = await upsertVectors(vectorItems);
+
+  return Response.json({ ok: true, source, ...result, vector, ts: new Date().toISOString() });
 }

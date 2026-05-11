@@ -18,6 +18,9 @@ Privacy boundary: PerkOS Knowledge is private-by-default. Internal memory, crede
 
 - [Service health](https://knowledge.perkos.xyz/healthz): Service and dependency health check.
 - [API health](https://knowledge.perkos.xyz/api/health): JSON API health check.
+- [Keyword search](https://knowledge.perkos.xyz/knowledge/search?q=x402): Live keyword search over ingested Perky research.
+- [Vector search](https://knowledge.perkos.xyz/knowledge/vector-search?q=agent%20payments): Live vector search over ingested Perky research.
+- [Mimir brief](https://knowledge.perkos.xyz/knowledge/brief/mimir): Live role-specific brief generated from ingested research.
 
 ## Planned Interfaces
 
