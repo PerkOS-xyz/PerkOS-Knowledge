@@ -1,4 +1,4 @@
-import { getAccessContext, readableKnowledgeWhere, recordUsage, requestId, visibilityCounts } from '../../../lib/access';
+import { getAccessContext, readableKnowledgeWhere, recordUsage, requestId, sanitizeKnowledgeRow, visibilityCounts } from '../../../lib/access';
 import { withDb } from '../../../lib/db';
 
 export const dynamic = 'force-dynamic';
@@ -49,20 +49,7 @@ export async function POST(request: Request) {
     mode,
     query,
     count: result.length,
-    context: result.map((item) => ({
-      id: item.id,
-      title: item.title,
-      summary: item.summary,
-      track: item.track,
-      chains: item.chains,
-      path: item.path,
-      visibility: item.visibility,
-      validationStatus: item.validation_status,
-      sanitizationStatus: item.sanitization_status,
-      qualityScore: item.quality_score,
-      usageCount: item.usage_count,
-      updatedAt: item.updated_at,
-    })),
+    context: result.map(sanitizeKnowledgeRow),
     guidance: 'Use this context with your own LLM/runtime. Knowledge does not require a specific model provider.',
   });
 }

@@ -161,3 +161,30 @@ export function visibilityCounts(rows: Array<{ visibility?: string }>) {
     return acc;
   }, {});
 }
+
+export function publicKnowledgeId(id: string) {
+  return `kitem_${crypto.createHash('sha256').update(id).digest('hex').slice(0, 16)}`;
+}
+
+export function sanitizeKnowledgeRow<T extends Record<string, unknown>>(row: T) {
+  const visibility = String(row.visibility || 'public');
+  return {
+    id: publicKnowledgeId(String(row.id || row.path || row.title || 'item')),
+    source: 'research-sync',
+    date: row.date ?? null,
+    track: row.track ?? null,
+    title: row.title ?? null,
+    path: row.path ?? null,
+    chains: Array.isArray(row.chains) ? row.chains : [],
+    status: row.status ?? null,
+    confidence: row.confidence ?? null,
+    summary: row.summary ?? null,
+    visibility,
+    organizationScope: visibility === 'private' ? 'organization' : null,
+    validationStatus: row.validation_status ?? null,
+    sanitizationStatus: row.sanitization_status ?? null,
+    qualityScore: row.quality_score ?? null,
+    usageCount: row.usage_count ?? null,
+    updatedAt: row.updated_at ?? null,
+  };
+}

@@ -1,4 +1,4 @@
-import { getAccessContext, qdrantAccessFilter, recordUsage, requestId, visibilityCounts } from '../../../lib/access';
+import { getAccessContext, qdrantAccessFilter, recordUsage, requestId, sanitizeKnowledgeRow, visibilityCounts } from '../../../lib/access';
 import { withDb } from '../../../lib/db';
 import { searchVectors } from '../../../lib/vector';
 
@@ -42,7 +42,7 @@ export async function GET(request: Request) {
     count: response.vectorResults.length,
     results: response.vectorResults.map((item) => ({
       score: item.score,
-      ...item.payload,
+      ...sanitizeKnowledgeRow(item.payload),
     })),
   });
 }
