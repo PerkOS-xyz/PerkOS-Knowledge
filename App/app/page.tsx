@@ -1,3 +1,5 @@
+import SiteNav from '../components/SiteNav';
+
 const features = [
   ['Agent-ready search', 'Expose curated research through fast APIs designed for autonomous agents, assistants, and PerkOS services.'],
   ['Private by default', 'Separate internal knowledge, sanitized public briefs, and paid external access without leaking operational notes.'],
@@ -17,10 +19,7 @@ export default function Home() {
   return (
     <main>
       <section className="hero">
-        <nav className="nav">
-          <div className="brand"><span className="orb" /> PerkOS Knowledge</div>
-          <a href="/healthz" className="status">Live health</a>
-        </nav>
+        <SiteNav />
 
         <div className="heroGrid">
           <div>
@@ -30,8 +29,8 @@ export default function Home() {
               PerkOS Knowledge turns curated research into a reusable, searchable, paid knowledge layer for internal agents and external autonomous clients.
             </p>
             <div className="actions">
-              <a className="primary" href="/api/health">Check API</a>
-              <a className="secondary" href="https://github.com/PerkOS-xyz/knowledge">Read the code</a>
+              <a className="primary" href="/dashboard">Open dashboard</a>
+              <a className="secondary" href="/healthz">Live health</a>
             </div>
           </div>
 
