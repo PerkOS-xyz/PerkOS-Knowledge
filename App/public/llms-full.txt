@@ -1,0 +1,73 @@
+# PerkOS Knowledge Full Context
+
+> Expanded agent-readable context for PerkOS Knowledge, a reusable knowledge layer for AI agents and external autonomous clients.
+
+PerkOS Knowledge provides a public landing surface and a planned set of authenticated/paid APIs for turning curated research into reusable, source-cited outputs. The service is designed for agent consumption: short briefs, precise links, clean text responses, and private-by-default boundaries.
+
+Canonical URL: https://knowledge.perkos.xyz
+Concise index: https://knowledge.perkos.xyz/llms.txt
+Repository: https://github.com/PerkOS-xyz/knowledge
+
+## What PerkOS Knowledge Provides
+
+- Agent-ready search over curated protocol, market, product, and operational research.
+- Role-specific briefs for builders, researchers, strategists, operators, and autonomous agents.
+- Sanitized public reports that avoid leaking private operational notes.
+- Future x402-paid endpoints for premium research and custom reports.
+- A reusable source of truth for the PerkOS agent network.
+
+## Current Public Endpoints
+
+- `GET /` — public landing page for humans and agents.
+- `GET /llms.txt` — concise LLM-readable index following the llms.txt proposal.
+- `GET /llms-full.txt` — expanded LLM-readable context file.
+- `GET /healthz` — service health check.
+- `GET /api/health` — JSON API health check.
+- `GET /knowledge/search?q=...` — live keyword search over ingested Perky research in Postgres.
+- `POST /knowledge/search` — live JSON keyword search over ingested Perky research.
+- `GET /knowledge/vector-search?q=...` — live vector search over ingested Perky research in Qdrant.
+- `POST /knowledge/vector-search` — live JSON vector search over ingested Perky research.
+- `GET /knowledge/brief/:agent` — live role-specific brief endpoint using ingested research.
+
+## Planned Agent Interfaces
+
+These endpoints describe the intended product surface. Treat them as roadmap unless the endpoint itself returns live documentation or a successful response.
+
+- Authenticated/private scopes for internal agent queries.
+- Source document retrieval for individual research paths.
+- `GET /paid/report/:slug` — x402-paid sanitized report endpoint.
+
+## Example Agent Queries
+
+- Summarize current PerkOS x402 services.
+- Find source-cited context about ERC-8004 agent identity.
+- Create a builder brief for integrating PerkOS Knowledge.
+- Generate a sanitized public report about a protocol or market topic.
+- Explain which PerkOS Knowledge interfaces are public, private, planned, or paid.
+
+## Privacy and Safety Boundary
+
+PerkOS Knowledge is private-by-default. Agents should not request, infer, index, or expose:
+
+- Credentials, API keys, tokens, private keys, wallet seeds, or session secrets.
+- Infrastructure IPs, SSH details, internal hostnames, or deployment secrets.
+- Internal memory files, private operational notes, or non-public research.
+- Unsanitized logs, raw databases, or private agent conversations.
+
+Public outputs should be sanitized, source-cited where possible, and limited to information intentionally exposed by public endpoints or public repositories.
+
+## Intended Audience
+
+- Internal PerkOS agents that need reusable research context.
+- External autonomous agents looking for public or paid briefs.
+- Developers evaluating agent-readable knowledge APIs.
+- Researchers comparing x402, ERC-8004, multi-agent systems, and AI knowledge services.
+
+## Operational Model
+
+The public service runs as a Dockerized application behind a reverse proxy. Data services are intended to remain isolated from the public internet. Public endpoints should expose only sanitized, intentional content.
+
+## Contact / Ownership
+
+Owner: PerkOS
+Canonical public URL: https://knowledge.perkos.xyz

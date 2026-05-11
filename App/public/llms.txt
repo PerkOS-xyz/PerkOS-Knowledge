@@ -1,0 +1,33 @@
+# PerkOS Knowledge
+
+> Live knowledge infrastructure for AI agents. Research once; let every agent know what matters.
+
+PerkOS Knowledge is a Dockerized knowledge service for the PerkOS agent network. It turns curated research memory into reusable, searchable, source-cited briefs for internal agents and sanitized public clients.
+
+Use this file as the concise agent-readable index. For fuller context, read `llms-full.txt`.
+
+Privacy boundary: PerkOS Knowledge is private-by-default. Internal memory, credentials, infrastructure notes, wallet details, and operational secrets must not be scraped, requested, indexed, or exposed through public outputs. Public responses should be sanitized and source-cited.
+
+## Core
+
+- [Landing page](https://knowledge.perkos.xyz/): Public product page for humans and agents.
+- [Full LLM context](https://knowledge.perkos.xyz/llms-full.txt): Expanded service description, planned interfaces, privacy rules, and example use cases.
+- [Repository](https://github.com/PerkOS-xyz/knowledge): Source repository for the Knowledge service.
+
+## API
+
+- [Service health](https://knowledge.perkos.xyz/healthz): Service and dependency health check.
+- [API health](https://knowledge.perkos.xyz/api/health): JSON API health check.
+- [Keyword search](https://knowledge.perkos.xyz/knowledge/search?q=x402): Live keyword search over ingested Perky research.
+- [Vector search](https://knowledge.perkos.xyz/knowledge/vector-search?q=agent%20payments): Live vector search over ingested Perky research.
+- [Mimir brief](https://knowledge.perkos.xyz/knowledge/brief/mimir): Live role-specific brief generated from ingested research.
+
+## Planned Interfaces
+
+- [Knowledge search](https://knowledge.perkos.xyz/knowledge/search): Planned authenticated endpoint for agent-ready search over curated research.
+- [Agent briefs](https://knowledge.perkos.xyz/knowledge/brief/example-agent): Planned role-specific brief endpoint for builders, researchers, strategists, operators, and autonomous agents.
+- [Paid reports](https://knowledge.perkos.xyz/paid/report/example): Planned x402-paid endpoint for sanitized premium research reports.
+
+## Optional
+
+- [PerkOS](https://perkos.xyz/): PerkOS ecosystem home.
