@@ -23,10 +23,10 @@ Repository: https://github.com/PerkOS-xyz/knowledge
 - `GET /llms-full.txt` — expanded LLM-readable context file.
 - `GET /healthz` — service health check.
 - `GET /api/health` — JSON API health check.
-- `GET /knowledge/search?q=...` — live keyword search over ingested Perky research in Postgres.
-- `POST /knowledge/search` — live JSON keyword search over ingested Perky research.
-- `GET /knowledge/vector-search?q=...` — live vector search over ingested Perky research in Qdrant.
-- `POST /knowledge/vector-search` — live JSON vector search over ingested Perky research.
+- `GET /knowledge/search?q=...` — live keyword search over ingested research in Postgres.
+- `POST /knowledge/search` — live JSON keyword search over ingested research.
+- `GET /knowledge/vector-search?q=...` — live vector search over ingested research in Qdrant.
+- `POST /knowledge/vector-search` — live JSON vector search over ingested research.
 - `GET /knowledge/brief/:agent` — live role-specific brief endpoint using ingested research.
 
 ## Planned Agent Interfaces

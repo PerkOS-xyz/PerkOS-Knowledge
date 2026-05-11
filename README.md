@@ -18,12 +18,12 @@ Agents call it when they need context, briefs, or custom research.
 ```mermaid
 flowchart LR
   subgraph Producers["Knowledge producers"]
-    Perky["Perky research jobs"]
+    ResearchJobs["Research ingestion jobs"]
     Curators["Human and agent curation"]
   end
 
   subgraph Ingest["Ingestion layer"]
-    Sync["scripts/sync-perky-research.js"]
+    Sync["Research sync worker"]
     IngestAPI["POST /api/ingest/research"]
     Sanitizer["Sanitization boundary"]
   end
@@ -58,7 +58,7 @@ flowchart LR
     Humans["Humans and operators"]
   end
 
-  Perky --> Sync --> IngestAPI --> Sanitizer
+  ResearchJobs --> Sync --> IngestAPI --> Sanitizer
   Curators --> Sanitizer
   Sanitizer --> Postgres
   Sanitizer --> Qdrant
