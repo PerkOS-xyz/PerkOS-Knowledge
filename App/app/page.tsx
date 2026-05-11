@@ -2,7 +2,7 @@ const features = [
   ['Agent-ready search', 'Expose curated research through fast APIs designed for autonomous agents, assistants, and PerkOS services.'],
   ['Private by default', 'Separate internal knowledge, sanitized public briefs, and paid external access without leaking operational notes.'],
   ['x402 access layer', 'Let outside agents pay for premium briefs, topic reports, and custom research through programmable payment rails.'],
-  ['Built for reuse', 'Perky curates once; Mimir, Tyr, Bragi, Idunn, NEO, and external agents can reuse the same source of truth.']
+  ['Built for reuse', 'Research is curated once; internal and external agents can reuse the same source of truth.']
 ];
 
 const apiCards = [
@@ -27,7 +27,7 @@ export default function Home() {
             <p className="eyebrow">Live knowledge infrastructure for AI agents</p>
             <h1>Research once. Let every agent know what matters.</h1>
             <p className="lead">
-              PerkOS Knowledge turns Perky&apos;s research memory into a reusable, searchable, paid knowledge layer for internal agents and external autonomous clients.
+              PerkOS Knowledge turns curated research into a reusable, searchable, paid knowledge layer for internal agents and external autonomous clients.
             </p>
             <div className="actions">
               <a className="primary" href="/api/health">Check API</a>
