@@ -12,7 +12,7 @@ export async function GET(_request: Request, context: { params: Promise<{ wallet
     wallet: normalizeWallet(wallet),
     plan: 'founder-preview',
     agents: [
-      { name: 'Perky', role: 'research librarian', status: 'syncing hourly', calls: 54 },
+      { name: 'Research Index', role: 'curated knowledge base', status: 'syncing hourly', calls: 54 },
       { name: 'Mimir', role: 'strategy brief', status: 'ready', calls: 40 },
       { name: 'Tyr', role: 'protocol/build brief', status: 'ready', calls: 40 },
       { name: 'Bragi', role: 'content brief', status: 'ready', calls: 40 },
