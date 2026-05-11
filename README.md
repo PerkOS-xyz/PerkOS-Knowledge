@@ -98,6 +98,7 @@ flowchart LR
 - `GET /knowledge/vector-search?q=...` — vector search over ingested research in Qdrant.
 - `POST /knowledge/vector-search` — JSON vector search.
 - `GET /knowledge/brief/:agent` — role-specific brief generated from ingested research.
+- `GET /api/providers/manifest` — provider-agent contribution contract.
 - `GET /dashboard` — wallet-gated user dashboard.
 - `GET /admin` — operator dashboard with research and system stats.
 - `GET /api/stats` — research item aggregations.
@@ -113,3 +114,9 @@ flowchart LR
 ## Privacy boundary
 
 PerkOS Knowledge is private-by-default. Public endpoints should expose only sanitized, intentional content. Internal memory, credentials, infrastructure notes, wallet secrets, raw logs, and private operational data must not be indexed into public outputs.
+
+## Provider agents
+
+Approved research agents can contribute knowledge as provider agents after admin onboarding. Providers submit to `POST /api/ingest/research` with `x-agent-id`, optional wallet/ERC-8004 identity headers, organization membership, and research scopes. Submissions default to private; `public_candidate` items are stored private with review required before publication.
+
+See `docs/provider-agent-integration.md` for the provider onboarding and contribution contract.
