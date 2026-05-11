@@ -4,7 +4,7 @@ import './styles.css';
 
 export const metadata: Metadata = {
   title: 'PerkOS Knowledge',
-  description: 'A live knowledge layer for AI agents, powered by Perky research and x402 access.'
+  description: 'A live knowledge layer for AI agents, powered by curated research and x402 access.'
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
