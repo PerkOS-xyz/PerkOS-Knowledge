@@ -6,7 +6,7 @@ export async function GET() {
   const data = await withDb(async (client) => {
     const [total, bySource, byTrack, byChain] = await Promise.all([
       client.query('SELECT count(*)::int AS count, max(updated_at) AS last_update FROM research_items'),
-      client.query('SELECT coalesce(source,\'unknown\') AS name, count(*)::int AS count, max(updated_at) AS last_update FROM research_items GROUP BY 1 ORDER BY count DESC'),
+      client.query('SELECT \'research-sync\' AS name, count(*)::int AS count, max(updated_at) AS last_update FROM research_items'),
       client.query('SELECT coalesce(track,\'unknown\') AS name, count(*)::int AS count FROM research_items GROUP BY 1 ORDER BY count DESC'),
       client.query('SELECT chain AS name, count(*)::int AS count FROM research_items, unnest(chains) AS chain GROUP BY chain ORDER BY count DESC'),
     ]);
