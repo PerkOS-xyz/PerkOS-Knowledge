@@ -1,6 +1,8 @@
 import WalletGate from '../../components/WalletGate';
 import { ALLOWED_WALLET } from '../../lib/auth';
 
+type Bucket = { name: string; count: number };
+
 async function getUsage() {
   const base = process.env.NEXT_PUBLIC_SITE_URL || 'https://knowledge.perkos.xyz';
   const res = await fetch(`${base}/api/usage/${ALLOWED_WALLET}`, { cache: 'no-store' });
@@ -8,8 +10,27 @@ async function getUsage() {
   return res.json();
 }
 
+function Buckets({ title, rows }: { title: string; rows: Bucket[] }) {
+  if (!rows.length) return <p className="body">No {title.toLowerCase()} data yet.</p>;
+  const max = Math.max(...rows.map((row) => row.count), 1);
+  return (
+    <div className="bars">
+      {rows.map((row) => (
+        <div className="barRow" key={row.name}>
+          <span>{row.name}</span>
+          <div><i style={{ width: `${Math.max(8, (row.count / max) * 100)}%` }} /></div>
+          <strong>{row.count}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default async function UserDashboard() {
   const usage = await getUsage();
+  const lastUpdate = usage.knowledge.lastKnowledgeUpdate
+    ? new Date(usage.knowledge.lastKnowledgeUpdate).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
+    : 'No sync yet';
 
   return (
     <WalletGate>
@@ -21,41 +42,36 @@ export default async function UserDashboard() {
 
         <section className="dashHero">
           <p className="eyebrow">User dashboard</p>
-          <h1>Agent console and x402 usage.</h1>
-          <p className="lead">Wallet <code>{usage.wallet}</code> can see its agent access, available briefs, and payment metering status.</p>
+          <h1>Wallet access and live knowledge.</h1>
+          <p className="lead">Wallet <code>{usage.wallet}</code> has real allowlist access to the Knowledge dashboard.</p>
         </section>
 
         <section className="metricsGrid">
-          <article className="metric"><span>Plan</span><strong>{usage.plan}</strong></article>
-          <article className="metric"><span>Knowledge items</span><strong>{usage.usage.knowledgeItemsAvailable}</strong></article>
-          <article className="metric"><span>x402 paid</span><strong>${usage.x402.totalPaidUsd}</strong></article>
-          <article className="metric"><span>Requests</span><strong>{usage.x402.totalRequests}</strong></article>
+          <article className="metric"><span>Access</span><strong>{usage.access.status}</strong></article>
+          <article className="metric"><span>Access method</span><strong>{usage.access.method.replace('_', ' ')}</strong></article>
+          <article className="metric"><span>Knowledge items</span><strong>{usage.knowledge.knowledgeItemsAvailable}</strong></article>
+          <article className="metric"><span>Last sync</span><strong>{lastUpdate}</strong></article>
         </section>
 
         <section className="dashGrid two">
           <article className="dashPanel">
-            <p className="eyebrow">Agent console</p>
-            <h2>Available agents</h2>
-            <div className="tableList">
-              {usage.agents.map((agent: { name: string; role: string; status: string; calls: number }) => (
-                <div className="tableRow" key={agent.name}>
-                  <div><strong>{agent.name}</strong><span>{agent.role}</span></div>
-                  <code>{agent.status}</code>
-                  <span>{agent.calls} items</span>
-                </div>
-              ))}
-            </div>
+            <p className="eyebrow">Live database</p>
+            <h2>Research coverage</h2>
+            <p className="body">These counts come from the live Postgres <code>research_items</code> table.</p>
+            <Buckets title="Tracks" rows={usage.knowledge.byTrack} />
           </article>
 
           <article className="dashPanel">
-            <p className="eyebrow">Payments</p>
-            <h2>x402 meter</h2>
-            <p className="body">{usage.x402.note}</p>
-            <div className="paymentBox">
-              <div><span>Status</span><strong>{usage.x402.status}</strong></div>
-              <div><span>Pending settlement</span><strong>${usage.x402.pendingSettlementUsd}</strong></div>
-            </div>
+            <p className="eyebrow">Chains</p>
+            <h2>Indexed chain coverage</h2>
+            <Buckets title="Chains" rows={usage.knowledge.byChain} />
           </article>
+        </section>
+
+        <section className="dashPanel wide">
+          <p className="eyebrow">Metering</p>
+          <h2>No live usage meter connected yet.</h2>
+          <p className="body">{usage.metering.message} Until request/payment events are stored, this dashboard does not show simulated request counts, revenue, or settlements.</p>
         </section>
       </main>
     </WalletGate>
