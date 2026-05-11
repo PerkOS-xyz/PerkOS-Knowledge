@@ -3,6 +3,12 @@ import { getX402Policy } from '../../../../../lib/x402';
 
 export const dynamic = 'force-dynamic';
 
+function configured(name: string, emptyValues: string[] = []) {
+  const value = process.env[name];
+  if (!value) return false;
+  return !emptyValues.includes(value);
+}
+
 export async function GET(request: Request) {
   const blocked = requireAdmin(request);
   if (blocked) return blocked;
@@ -23,13 +29,13 @@ export async function GET(request: Request) {
       getX402Policy('/skill/query', 'premium'),
     ],
     env: {
-      KNOWLEDGE_X402_MODE: process.env.KNOWLEDGE_X402_MODE ? 'configured' : 'default_metered_free',
-      KNOWLEDGE_X402_PUBLIC_PRICE_AMOUNT: process.env.KNOWLEDGE_X402_PUBLIC_PRICE_AMOUNT ? 'configured' : 'default',
-      KNOWLEDGE_X402_PRIVATE_PRICE_AMOUNT: process.env.KNOWLEDGE_X402_PRIVATE_PRICE_AMOUNT ? 'configured' : 'default',
-      KNOWLEDGE_X402_PREMIUM_PRICE_AMOUNT: process.env.KNOWLEDGE_X402_PREMIUM_PRICE_AMOUNT ? 'configured' : 'default',
-      KNOWLEDGE_X402_TOKEN: process.env.KNOWLEDGE_X402_TOKEN ? 'configured' : 'not_configured',
-      KNOWLEDGE_X402_PAY_TO: process.env.KNOWLEDGE_X402_PAY_TO ? 'configured' : 'not_configured',
-      KNOWLEDGE_X402_FACILITATOR_URL: process.env.KNOWLEDGE_X402_FACILITATOR_URL ? 'configured' : 'not_configured',
+      KNOWLEDGE_X402_MODE: configured('KNOWLEDGE_X402_MODE') ? 'configured' : 'default_metered_free',
+      KNOWLEDGE_X402_PUBLIC_PRICE_AMOUNT: configured('KNOWLEDGE_X402_PUBLIC_PRICE_AMOUNT') ? 'configured' : 'default',
+      KNOWLEDGE_X402_PRIVATE_PRICE_AMOUNT: configured('KNOWLEDGE_X402_PRIVATE_PRICE_AMOUNT') ? 'configured' : 'default',
+      KNOWLEDGE_X402_PREMIUM_PRICE_AMOUNT: configured('KNOWLEDGE_X402_PREMIUM_PRICE_AMOUNT') ? 'configured' : 'default',
+      KNOWLEDGE_X402_TOKEN: configured('KNOWLEDGE_X402_TOKEN', ['not_configured']) ? 'configured' : 'not_configured',
+      KNOWLEDGE_X402_PAY_TO: configured('KNOWLEDGE_X402_PAY_TO', ['not_configured']) ? 'configured' : 'not_configured',
+      KNOWLEDGE_X402_FACILITATOR_URL: configured('KNOWLEDGE_X402_FACILITATOR_URL') ? 'configured' : 'not_configured',
     },
   });
 }
