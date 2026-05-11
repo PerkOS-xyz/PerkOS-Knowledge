@@ -2,17 +2,18 @@
 
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount } from 'wagmi';
-import { isAllowedWallet } from '../lib/auth';
+import { useWalletAccess } from './useWalletAccess';
 
 export default function SiteNav() {
   const { address, isConnected } = useAccount();
-  const allowed = isAllowedWallet(address);
+  const access = useWalletAccess(address);
+  const allowed = isConnected && access === 'allowed';
 
   return (
     <nav className="nav siteNav">
       <a href="/" className="brand"><span className="orb" /> PerkOS Knowledge</a>
       <div className="navActions">
-        {isConnected && allowed ? (
+        {allowed ? (
           <div className="headerMenu" aria-label="Authenticated navigation">
             <a href="/dashboard">Dashboard</a>
             <a href="/admin">Admin</a>

@@ -2,14 +2,14 @@
 
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount, useDisconnect } from 'wagmi';
-import { ALLOWED_WALLET, isAllowedWallet } from '../lib/auth';
+import { useWalletAccess } from './useWalletAccess';
 
 export default function WalletGate({ children }: { children: React.ReactNode }) {
   const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
-  const allowed = isAllowedWallet(address);
+  const access = useWalletAccess(address);
 
-  if (isConnected && allowed) return <>{children}</>;
+  if (isConnected && access === 'allowed') return <>{children}</>;
 
   return (
     <main className="dashShell">
@@ -22,21 +22,21 @@ export default function WalletGate({ children }: { children: React.ReactNode }) 
         <p className="eyebrow">Wallet login</p>
         <h1>Connect your Knowledge wallet.</h1>
         <p className="lead">
-          The dashboard menu unlocks after RainbowKit detects the allowlisted wallet. This preview uses wallet connection for access; signature-based auth can be added next.
+          The dashboard menu unlocks after your connected wallet is verified against the server-side access list.
         </p>
 
         <div className="connectPanel">
           <ConnectButton />
-          {isConnected && !allowed ? (
+          {isConnected && access === 'checking' ? (
+            <p className="mutedSmall">Checking wallet access…</p>
+          ) : null}
+          {isConnected && access === 'denied' ? (
             <div className="walletWarning">
-              <strong>Wallet not allowlisted</strong>
-              <span>Connected: <code>{address}</code></span>
-              <span>Allowed: <code>{ALLOWED_WALLET}</code></span>
+              <strong>Wallet not authorized</strong>
+              <span>The connected wallet is not on the current access list.</span>
               <button type="button" onClick={() => disconnect()}>Disconnect</button>
             </div>
-          ) : (
-            <p className="mutedSmall">Allowed wallet: <code>{ALLOWED_WALLET}</code></p>
-          )}
+          ) : null}
         </div>
       </section>
     </main>

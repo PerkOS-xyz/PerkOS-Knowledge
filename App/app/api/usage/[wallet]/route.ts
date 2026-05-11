@@ -1,5 +1,5 @@
 import { withDb } from '../../../../lib/db';
-import { isAllowedWallet, normalizeWallet } from '../../../../lib/auth';
+import { isAllowedWallet } from '../../../../lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,7 +25,6 @@ export async function GET(_request: Request, context: { params: Promise<{ wallet
 
   return Response.json({
     ok: true,
-    wallet: normalizeWallet(wallet),
     access: {
       status: 'allowed',
       method: 'wallet_allowlist',
