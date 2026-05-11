@@ -19,9 +19,11 @@ export async function GET() {
       keywordSearch: 'GET/POST /knowledge/search',
       vectorSearch: 'GET/POST /knowledge/vector-search',
       stats: 'GET /api/stats',
+      x402Policy: 'GET /api/x402/policy',
       adminOrganizations: 'GET/POST /api/admin/organizations',
       adminAgents: 'GET/POST /api/admin/agents',
       adminAclSelfTest: 'POST /api/admin/acl/self-test',
+      adminX402Receipts: 'GET /api/admin/x402/receipts',
     },
     headers: {
       consumerWallet: 'x-agent-wallet',
@@ -35,7 +37,7 @@ export async function GET() {
       walletExposure: 'wallets are not returned in public responses by default',
     },
     economics: {
-      consumerPayments: 'x402 planned/tracked via receipts',
+      consumerPayments: 'x402 metered/free tracking on /skill/query; enforcement can be enabled later',
       contributorPayouts: 'future quality-and-usage based payouts; no payout in first stage',
     },
   });
