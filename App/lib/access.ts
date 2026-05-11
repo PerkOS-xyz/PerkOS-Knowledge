@@ -126,11 +126,15 @@ export async function recordUsage(client: Client, event: {
   visibilityCounts: Record<string, number>;
   successStatus?: string;
   latencyMs?: number;
+  x402ReceiptId?: string | null;
+  amountPaid?: number | null;
+  paymentChain?: string | null;
+  paymentToken?: string | null;
 }) {
   await client.query(
     `INSERT INTO knowledge_usage_events
-      (request_id, consumer_agent_id, consumer_wallet, consumer_erc8004_identity, organization_id, endpoint, query_hash, retrieved_item_ids, visibility_counts, success_status, latency_ms)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      (request_id, consumer_agent_id, consumer_wallet, consumer_erc8004_identity, organization_id, endpoint, query_hash, retrieved_item_ids, visibility_counts, x402_receipt_id, amount_paid, payment_chain, payment_token, success_status, latency_ms)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
     [
       event.requestId,
       event.access.agentId,
@@ -141,6 +145,10 @@ export async function recordUsage(client: Client, event: {
       event.query ? hashQuery(event.query) : null,
       event.retrievedItemIds,
       event.visibilityCounts,
+      event.x402ReceiptId || null,
+      event.amountPaid ?? null,
+      event.paymentChain || null,
+      event.paymentToken || null,
       event.successStatus || 'ok',
       event.latencyMs || null,
     ]

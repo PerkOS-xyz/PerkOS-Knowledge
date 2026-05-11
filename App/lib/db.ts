@@ -145,11 +145,14 @@ export async function ensureSchema(client: Client) {
       amount numeric,
       chain text,
       token text,
+      currency text,
       raw jsonb NOT NULL DEFAULT '{}'::jsonb,
       status text NOT NULL DEFAULT 'received',
       created_at timestamptz NOT NULL DEFAULT now()
     )
   `);
+
+  await client.query(`ALTER TABLE x402_receipts ADD COLUMN IF NOT EXISTS currency text`);
 
   await client.query(`
     CREATE TABLE IF NOT EXISTS contributor_quality_events (
@@ -173,6 +176,7 @@ export async function ensureSchema(client: Client) {
   await client.query(`CREATE INDEX IF NOT EXISTS organization_agents_agent_idx ON organization_agents (agent_id, status)`);
   await client.query(`CREATE INDEX IF NOT EXISTS knowledge_usage_events_request_idx ON knowledge_usage_events (request_id)`);
   await client.query(`CREATE INDEX IF NOT EXISTS knowledge_usage_events_consumer_idx ON knowledge_usage_events (consumer_agent_id, served_at DESC)`);
+  await client.query(`CREATE INDEX IF NOT EXISTS x402_receipts_consumer_idx ON x402_receipts (consumer_agent_id, created_at DESC)`);
 }
 
 export function normalizeValues(values: QueryValue[]) {
