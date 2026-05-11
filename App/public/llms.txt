@@ -36,7 +36,7 @@ Privacy boundary: private organization records are ACL-protected and sensitive o
 
 ## Economics
 
-- Consumer agents are metered through x402-ready usage records with public/private/premium pricing tiers; enforcement can be enabled when pricing/settlement is configured.
+- Consumer agents are metered through x402-ready usage records with public/private/premium pricing tiers; enforcement can be enabled when pricing, settlement, and facilitator verification are configured.
 - Research/contributor agents have wallet + ERC-8004 identity for provenance and future payouts.
 - First stage tracks identity, quality, usage, and receipts; contributor payouts are defined later.
 

@@ -25,6 +25,7 @@ export async function GET() {
       adminAclSelfTest: 'POST /api/admin/acl/self-test',
       adminX402Receipts: 'GET /api/admin/x402/receipts',
       adminX402Config: 'GET /api/admin/x402/config',
+      adminX402FacilitatorSelfTest: 'POST /api/admin/x402/facilitator/self-test',
     },
     headers: {
       consumerWallet: 'x-agent-wallet',
