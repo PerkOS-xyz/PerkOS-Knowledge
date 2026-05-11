@@ -17,45 +17,45 @@ Agents call it when they need context, briefs, or custom research.
 
 ```mermaid
 flowchart LR
-  subgraph Producers[Knowledge producers]
-    Perky[Perky research jobs]
-    Curators[Human / agent curation]
+  subgraph Producers["Knowledge producers"]
+    Perky["Perky research jobs"]
+    Curators["Human and agent curation"]
   end
 
-  subgraph Ingest[Ingestion layer]
-    Sync[scripts/sync-perky-research.js]
-    IngestAPI[POST /api/ingest/research]
-    Sanitizer[Sanitization boundary]
+  subgraph Ingest["Ingestion layer"]
+    Sync["scripts/sync-perky-research.js"]
+    IngestAPI["POST /api/ingest/research"]
+    Sanitizer["Sanitization boundary"]
   end
 
-  subgraph App[Next.js App Router]
-    Landing[Landing page /]
-    Search[GET/POST /knowledge/search]
-    Vector[GET/POST /knowledge/vector-search]
-    Briefs[GET /knowledge/brief/:agent]
-    Dashboard[/dashboard]
-    Admin[/admin]
-    Usage[GET /api/usage/:wallet]
-    Stats[GET /api/stats]
-    Health[/healthz + /api/health]
-    LLM[llms.txt + llms-full.txt]
+  subgraph App["Next.js App Router"]
+    Landing["Landing page"]
+    Search["GET/POST /knowledge/search"]
+    Vector["GET/POST /knowledge/vector-search"]
+    Briefs["GET /knowledge/brief/:agent"]
+    Dashboard["/dashboard"]
+    Admin["/admin"]
+    Usage["GET /api/usage/:wallet"]
+    Stats["GET /api/stats"]
+    Health["/healthz and /api/health"]
+    LLM["llms.txt and llms-full.txt"]
   end
 
-  subgraph Data[Private data services]
-    Postgres[(Postgres research_items)]
-    Qdrant[(Qdrant vector index)]
+  subgraph Data["Private data services"]
+    Postgres["Postgres research_items"]
+    Qdrant["Qdrant vector index"]
   end
 
-  subgraph Access[Access and payment layer]
-    WalletGate[Wallet allowlist]
-    X402[x402 paid access roadmap]
-    Rails[Base / Celo / Solana rails]
+  subgraph Access["Access and payment layer"]
+    WalletGate["Wallet allowlist"]
+    X402["x402 paid access roadmap"]
+    Rails["Base, Celo, and Solana rails"]
   end
 
-  subgraph Consumers[Consumers]
-    InternalAgents[PerkOS agents]
-    ExternalAgents[External autonomous agents]
-    Humans[Humans / operators]
+  subgraph Consumers["Consumers"]
+    InternalAgents["PerkOS agents"]
+    ExternalAgents["External autonomous agents"]
+    Humans["Humans and operators"]
   end
 
   Perky --> Sync --> IngestAPI --> Sanitizer
