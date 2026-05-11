@@ -102,6 +102,10 @@ export async function ensureSchema(client: Client) {
   await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS sanitization_status text NOT NULL DEFAULT 'unspecified'`);
   await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS quality_score numeric`);
   await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS usage_count integer NOT NULL DEFAULT 0`);
+  await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS contribution_type text NOT NULL DEFAULT 'research'`);
+  await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS publication_status text NOT NULL DEFAULT 'private'`);
+  await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS content_hash text`);
+  await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS evidence jsonb NOT NULL DEFAULT '[]'::jsonb`);
   await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS submitted_at timestamptz`);
   await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS validated_at timestamptz`);
 
@@ -170,6 +174,8 @@ export async function ensureSchema(client: Client) {
   await client.query(`CREATE INDEX IF NOT EXISTS research_items_chains_idx ON research_items USING gin (chains)`);
   await client.query(`CREATE INDEX IF NOT EXISTS research_items_visibility_org_idx ON research_items (visibility, organization_id)`);
   await client.query(`CREATE INDEX IF NOT EXISTS research_items_contributor_idx ON research_items (contributor_agent_id)`);
+  await client.query(`CREATE INDEX IF NOT EXISTS research_items_publication_idx ON research_items (publication_status, updated_at DESC)`);
+  await client.query(`CREATE INDEX IF NOT EXISTS research_items_contribution_type_idx ON research_items (contribution_type)`);
   await client.query(`CREATE INDEX IF NOT EXISTS research_items_search_idx ON research_items USING gin (to_tsvector('english', coalesce(title,'') || ' ' || coalesce(summary,'') || ' ' || coalesce(track,'') || ' ' || coalesce(path,'')))`);
   await client.query(`CREATE INDEX IF NOT EXISTS agent_identities_wallet_idx ON agent_identities (lower(wallet))`);
   await client.query(`CREATE INDEX IF NOT EXISTS agent_identities_erc8004_idx ON agent_identities (erc8004_identity)`);

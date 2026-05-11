@@ -1,15 +1,29 @@
+import crypto from 'crypto';
 import { withDb } from '../../../../lib/db';
 import { upsertVectors, type VectorItem } from '../../../../lib/vector';
+import {
+  assertProviderCanSubmit,
+  contributionId,
+  defaultSanitizationStatus,
+  defaultValidationStatus,
+  getProviderIdentity,
+  normalizeProviderVisibility,
+  publicationStatus,
+  storedVisibility,
+  textOrNull,
+  type ProviderIdentity,
+} from '../../../../lib/providers';
 
 export const dynamic = 'force-dynamic';
 
-type Visibility = 'public' | 'private';
+type Visibility = 'public' | 'private' | 'public_candidate';
 
 type ResearchItem = {
   date?: string;
   track?: string;
   title?: string;
   path?: string;
+  content?: string;
   agents?: string[];
   chains?: string[];
   status?: string;
@@ -23,28 +37,40 @@ type ResearchItem = {
   validation_status?: string;
   sanitization_status?: string;
   quality_score?: number | null;
+  contribution_type?: string;
+  evidence?: unknown[];
+  metadata?: Record<string, unknown>;
 };
 
 function unauthorized() {
   return Response.json({ ok: false, error: 'unauthorized' }, { status: 401 });
 }
 
-function normalizeVisibility(value?: string): Visibility {
-  return value === 'public' ? 'public' : 'private';
+function contentHash(item: ResearchItem) {
+  return crypto
+    .createHash('sha256')
+    .update([item.title || '', item.summary || '', item.content || '', item.path || ''].join('\n'))
+    .digest('hex');
 }
 
-function textOrNull(value: unknown) {
-  const text = String(value || '').trim();
-  return text || null;
+function cleanTextArray(value: unknown, max = 20) {
+  if (!Array.isArray(value)) return [];
+  return value.map((entry) => String(entry).trim()).filter(Boolean).slice(0, max);
 }
 
-async function ensureAgentAndOrg(client: import('pg').Client, item: ResearchItem, body: Record<string, unknown>) {
-  const organizationId = textOrNull(item.organization_id || body.organization_id);
-  const contributorAgentId = textOrNull(item.contributor_agent_id || body.contributor_agent_id);
-  const contributorName = textOrNull(body.contributor_name) || contributorAgentId;
-  const contributorWallet = textOrNull(item.contributor_wallet || body.contributor_wallet);
-  const contributorErc8004 = textOrNull(item.contributor_erc8004_identity || body.contributor_erc8004_identity);
+function cleanContributionType(value: unknown) {
+  const text = String(value || 'research').trim().toLowerCase().replace(/[^a-z0-9:_-]+/g, '-');
+  return text || 'research';
+}
 
+async function ensureAgentAndOrg(client: import('pg').Client, item: ResearchItem, body: Record<string, unknown>, identity: ProviderIdentity) {
+  const organizationId = textOrNull(item.organization_id) || identity.organizationId;
+  const contributorAgentId = textOrNull(item.contributor_agent_id) || identity.agentId;
+  const contributorWallet = textOrNull(item.contributor_wallet) || identity.wallet;
+  const contributorErc8004 = textOrNull(item.contributor_erc8004_identity) || identity.erc8004Identity;
+
+  // Organizations and agents should normally be onboarded through admin APIs first.
+  // Keep this upsert for backward-compatible bootstrap/legacy ingest flows guarded by KNOWLEDGE_INGEST_TOKEN.
   if (organizationId) {
     await client.query(
       `INSERT INTO organizations (id, name, slug)
@@ -59,7 +85,7 @@ async function ensureAgentAndOrg(client: import('pg').Client, item: ResearchItem
       `INSERT INTO agents (id, display_name, agent_type)
        VALUES ($1, $2, 'contributor')
        ON CONFLICT (id) DO UPDATE SET updated_at = now()`,
-      [contributorAgentId, contributorName || contributorAgentId]
+      [contributorAgentId, contributorAgentId]
     );
 
     if (contributorWallet || contributorErc8004) {
@@ -67,16 +93,7 @@ async function ensureAgentAndOrg(client: import('pg').Client, item: ResearchItem
         `INSERT INTO agent_identities (agent_id, wallet, erc8004_identity, chain)
          VALUES ($1, $2, $3, $4)
          ON CONFLICT DO NOTHING`,
-        [contributorAgentId, contributorWallet, contributorErc8004, textOrNull(body.identity_chain)]
-      );
-    }
-
-    if (organizationId) {
-      await client.query(
-        `INSERT INTO organization_agents (organization_id, agent_id, role, scopes)
-         VALUES ($1, $2, 'contributor', ARRAY['ingest'])
-         ON CONFLICT (organization_id, agent_id) DO NOTHING`,
-        [organizationId, contributorAgentId]
+        [contributorAgentId, contributorWallet, contributorErc8004, identity.identityChain]
       );
     }
   }
@@ -92,33 +109,47 @@ export async function POST(request: Request) {
   if (auth !== `Bearer ${token}`) return unauthorized();
 
   const body = await request.json();
-  const source = String(body.source || 'unknown');
-  const defaultVisibility = normalizeVisibility(String(body.visibility || 'public'));
-  const items = Array.isArray(body.items) ? body.items as ResearchItem[] : [];
+  const source = String(body.source || 'provider-agent').trim() || 'provider-agent';
+  const identity = getProviderIdentity(request, body);
+  const defaultVisibility = normalizeProviderVisibility(body.visibility || 'private');
+  const items = Array.isArray(body.items) ? body.items as ResearchItem[] : body.item ? [body.item as ResearchItem] : [];
 
   if (!items.length) {
     return Response.json({ ok: false, error: 'items_required' }, { status: 400 });
-  }
-
-  const privateWithoutOrg = items.some((item) => normalizeVisibility(item.visibility || defaultVisibility) === 'private' && !textOrNull(item.organization_id || body.organization_id));
-  if (privateWithoutOrg) {
-    return Response.json({ ok: false, error: 'private_items_require_organization_id' }, { status: 400 });
   }
 
   const vectorItems: VectorItem[] = [];
 
   const result = await withDb(async (client) => {
     let upserted = 0;
+    const accepted: Array<{ id: string; path: string; visibility: string; publicationStatus: string; contributorAgentId: string | null }> = [];
+
     for (const item of items) {
       const path = String(item.path || '').trim();
       const title = String(item.title || path || 'Untitled').trim();
       if (!path) continue;
 
-      const visibility = normalizeVisibility(item.visibility || defaultVisibility);
-      const identity = await ensureAgentAndOrg(client, item, body);
-      const id = `${source}:${visibility}:${identity.organizationId || 'public'}:${path}`;
-      const validationStatus = item.validation_status || 'unvalidated';
-      const sanitizationStatus = item.sanitization_status || 'unspecified';
+      const requestedVisibility = normalizeProviderVisibility(item.visibility || defaultVisibility);
+      const visibility = storedVisibility(requestedVisibility);
+      const publishStatus = publicationStatus(requestedVisibility);
+      const validationStatus = defaultValidationStatus(textOrNull(item.validation_status));
+      const sanitizationStatus = defaultSanitizationStatus(requestedVisibility, textOrNull(item.sanitization_status));
+      const contributionType = cleanContributionType(item.contribution_type || body.contribution_type);
+      const evidence = Array.isArray(item.evidence) ? item.evidence.slice(0, 25) : [];
+      const itemIdentity = await ensureAgentAndOrg(client, item, body, identity);
+
+      const providerCheck = await assertProviderCanSubmit(
+        client,
+        { ...identity, agentId: itemIdentity.contributorAgentId, organizationId: itemIdentity.organizationId },
+        visibility,
+        publishStatus
+      );
+      if (!providerCheck.ok) {
+        return { error: providerCheck.error, status: providerCheck.status };
+      }
+
+      const id = contributionId(source, itemIdentity.organizationId, path);
+      const hash = contentHash(item);
 
       const vectorItem: VectorItem = {
         id,
@@ -127,12 +158,12 @@ export async function POST(request: Request) {
         track: item.track || null,
         title,
         path,
-        agents: item.agents || [],
-        chains: item.chains || [],
-        summary: item.summary || null,
+        agents: cleanTextArray(item.agents),
+        chains: cleanTextArray(item.chains),
+        summary: item.summary || item.content || null,
         visibility,
-        organization_id: identity.organizationId,
-        contributor_agent_id: identity.contributorAgentId,
+        organization_id: itemIdentity.organizationId,
+        contributor_agent_id: itemIdentity.contributorAgentId,
         validation_status: validationStatus,
         sanitization_status: sanitizationStatus,
       };
@@ -142,8 +173,9 @@ export async function POST(request: Request) {
         `INSERT INTO research_items
           (id, source, date, track, title, path, agents, chains, status, confidence, summary, raw,
            visibility, organization_id, contributor_agent_id, contributor_wallet, contributor_erc8004_identity,
-           validation_status, sanitization_status, quality_score, submitted_at, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,now(),now())
+           validation_status, sanitization_status, quality_score, contribution_type, publication_status, content_hash, evidence,
+           submitted_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,now(),now())
          ON CONFLICT (id) DO UPDATE SET
           source = EXCLUDED.source,
           date = EXCLUDED.date,
@@ -164,6 +196,10 @@ export async function POST(request: Request) {
           validation_status = EXCLUDED.validation_status,
           sanitization_status = EXCLUDED.sanitization_status,
           quality_score = EXCLUDED.quality_score,
+          contribution_type = EXCLUDED.contribution_type,
+          publication_status = EXCLUDED.publication_status,
+          content_hash = EXCLUDED.content_hash,
+          evidence = EXCLUDED.evidence,
           updated_at = now()`,
         [
           id,
@@ -172,29 +208,50 @@ export async function POST(request: Request) {
           item.track || null,
           title,
           path,
-          item.agents || [],
-          item.chains || [],
-          item.status || null,
+          cleanTextArray(item.agents),
+          cleanTextArray(item.chains),
+          item.status || 'submitted',
           item.confidence || null,
-          item.summary || null,
-          item,
+          item.summary || item.content || null,
+          { ...item, provider: { source, agent_id: itemIdentity.contributorAgentId, organization_id: itemIdentity.organizationId, publication_status: publishStatus } },
           visibility,
-          identity.organizationId,
-          identity.contributorAgentId,
-          identity.contributorWallet,
-          identity.contributorErc8004,
+          itemIdentity.organizationId,
+          itemIdentity.contributorAgentId,
+          itemIdentity.contributorWallet,
+          itemIdentity.contributorErc8004,
           validationStatus,
           sanitizationStatus,
           item.quality_score ?? null,
+          contributionType,
+          publishStatus,
+          hash,
+          JSON.stringify(evidence),
         ]
       );
+      accepted.push({ id, path, visibility, publicationStatus: publishStatus, contributorAgentId: itemIdentity.contributorAgentId });
       upserted += 1;
     }
     const count = await client.query('SELECT count(*)::int AS count FROM research_items');
-    return { upserted, total: count.rows[0].count };
+    return { upserted, total: count.rows[0].count, accepted };
   });
+
+  if ('error' in result) {
+    return Response.json({ ok: false, error: result.error }, { status: result.status });
+  }
 
   const vector = await upsertVectors(vectorItems);
 
-  return Response.json({ ok: true, source, ...result, vector, ts: new Date().toISOString() });
+  return Response.json({
+    ok: true,
+    source,
+    provider: {
+      agentId: identity.agentId,
+      organizationId: identity.organizationId,
+      hasWallet: Boolean(identity.wallet),
+      hasErc8004Identity: Boolean(identity.erc8004Identity),
+    },
+    ...result,
+    vector,
+    ts: new Date().toISOString(),
+  });
 }
