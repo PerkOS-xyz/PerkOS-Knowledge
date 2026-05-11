@@ -1,7 +1,6 @@
 import WalletGate from '../../components/WalletGate';
 
-type Bucket = { name: string; count: number };
-type Item = { title: string; source: string; date: string; track: string; path: string; agents: string[]; chains: string[]; summary: string; updated_at: string };
+type Bucket = { name: string; count: number; last_update?: string };
 
 async function getStats() {
   const base = process.env.NEXT_PUBLIC_SITE_URL || 'https://knowledge.perkos.xyz';
@@ -15,64 +14,58 @@ function Buckets({ title, rows }: { title: string; rows: Bucket[] }) {
   return (
     <article className="dashPanel">
       <p className="eyebrow">{title}</p>
-      <div className="bars">
-        {rows.map((row) => (
-          <div className="barRow" key={row.name}>
-            <span>{row.name}</span>
-            <div><i style={{ width: `${Math.max(8, (row.count / max) * 100)}%` }} /></div>
-            <strong>{row.count}</strong>
-          </div>
-        ))}
-      </div>
+      {rows.length ? (
+        <div className="bars">
+          {rows.map((row) => (
+            <div className="barRow" key={row.name}>
+              <span>{row.name}</span>
+              <div><i style={{ width: `${Math.max(8, (row.count / max) * 100)}%` }} /></div>
+              <strong>{row.count}</strong>
+            </div>
+          ))}
+        </div>
+      ) : <p className="body">No {title.toLowerCase()} data yet.</p>}
     </article>
   );
 }
 
 export default async function AdminDashboard() {
   const stats = await getStats();
+  const lastSync = stats.lastUpdate
+    ? new Date(stats.lastUpdate).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
+    : 'No sync yet';
 
   return (
     <WalletGate>
       <main className="dashShell">
         <nav className="dashNav">
           <a href="/" className="brand"><span className="orb" /> PerkOS Knowledge</a>
-          <div className="dashLinks"><a href="/dashboard">User</a><a href="/knowledge/vector-search?q=agent%20payments%20x402">Vector API</a></div>
+          <div className="dashLinks"><a href="/dashboard">User</a><a href="/api/stats">Stats API</a></div>
         </nav>
 
         <section className="dashHero">
           <p className="eyebrow">Admin dashboard</p>
-          <h1>Accumulated knowledge database.</h1>
-          <p className="lead">Live view of curated research synchronized into Postgres and Qdrant.</p>
+          <h1>Operational knowledge database.</h1>
+          <p className="lead">Only live database counts are shown here. No simulated agent activity, fake usage, or generated content previews.</p>
         </section>
 
         <section className="metricsGrid">
-          <article className="metric"><span>Total items</span><strong>{stats.totalItems}</strong></article>
+          <article className="metric"><span>Total records</span><strong>{stats.totalItems}</strong></article>
+          <article className="metric"><span>Sources</span><strong>{stats.bySource.length}</strong></article>
           <article className="metric"><span>Tracks</span><strong>{stats.byTrack.length}</strong></article>
-          <article className="metric"><span>Agents</span><strong>{stats.byAgent.length}</strong></article>
-          <article className="metric"><span>Last sync</span><strong>{new Date(stats.lastUpdate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</strong></article>
+          <article className="metric"><span>Last sync</span><strong>{lastSync}</strong></article>
         </section>
 
         <section className="dashGrid three">
+          <Buckets title="Sources" rows={stats.bySource} />
           <Buckets title="Tracks" rows={stats.byTrack} />
-          <Buckets title="Agents" rows={stats.byAgent} />
           <Buckets title="Chains" rows={stats.byChain} />
         </section>
 
         <section className="dashPanel wide">
-          <div className="panelHead">
-            <div><p className="eyebrow">Latest ingested</p><h2>Research items</h2></div>
-            <div className="dashLinks"><a href="/knowledge/search?q=x402&limit=5">Keyword search</a><a href="/knowledge/vector-search?q=agent%20payments%20x402&limit=5">Vector search</a></div>
-          </div>
-          <div className="itemList">
-            {stats.latest.map((item: Item) => (
-              <article key={item.path}>
-                <div className="itemMeta"><span>{item.track}</span><span>{item.date || 'unknown'}</span><span>{item.source}</span></div>
-                <h3>{item.title}</h3>
-                <p>{item.summary}</p>
-                <div className="chips">{[...item.agents, ...item.chains].map((chip) => <code key={`${item.path}-${chip}`}>{chip}</code>)}</div>
-              </article>
-            ))}
-          </div>
+          <p className="eyebrow">Data policy</p>
+          <h2>Real records only.</h2>
+          <p className="body">This view intentionally hides agent-attribution charts and latest narrative previews because the current schema stores tags and summaries, not verified agent contributions or audited user activity.</p>
         </section>
       </main>
     </WalletGate>
