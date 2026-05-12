@@ -1,0 +1,23 @@
+{
+  "baseUrl": "https://knowledge.perkos.xyz",
+  "auth": {
+    "tokenEnv": "KNOWLEDGE_INGEST_TOKEN"
+  },
+  "provider": {
+    "agentId": "provider-markets",
+    "organizationId": "<organization-id>",
+    "visibility": "private",
+    "source": "provider-markets",
+    "contributionType": "market_signal"
+  },
+  "sources": [
+    {
+      "type": "funding-rates-directory",
+      "dir": "./data/funding-rates",
+      "track": "markets",
+      "pathPrefix": "funding-rates",
+      "chains": ["multi"],
+      "confidence": "medium"
+    }
+  ]
+}
