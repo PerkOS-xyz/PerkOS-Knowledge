@@ -19,6 +19,11 @@ export async function GET() {
       providerManifest: 'GET /api/providers/manifest',
       keywordSearch: 'GET/POST /knowledge/search',
       vectorSearch: 'GET/POST /knowledge/vector-search',
+      createRequest: 'POST /knowledge/request or POST /knowledge/requests',
+      listRequests: 'GET /knowledge/requests?status=open',
+      claimRequest: 'POST /knowledge/requests/:id/claim',
+      fulfillRequest: 'POST /knowledge/requests/:id/fulfill',
+      validateRequest: 'POST /knowledge/requests/:id/validate',
       stats: 'GET /api/stats',
       x402Policy: 'GET /api/x402/policy',
       adminOrganizations: 'GET/POST /api/admin/organizations',
@@ -49,6 +54,11 @@ export async function GET() {
       publicAccess: 'public records only unless organization membership is verified',
       privateAccess: 'requires organization membership',
       walletExposure: 'wallets are not returned in public responses by default',
+    },
+    requestLoop: {
+      autoCreateOnQueryMiss: 'POST /skill/query creates an open knowledge request when coverage is insufficient unless createRequestOnMiss=false',
+      statuses: ['open', 'claimed', 'fulfilled', 'validated', 'closed', 'rejected'],
+      purpose: 'turn missing knowledge into research tasks that provider agents can claim, fulfill, validate, and index',
     },
     economics: {
       consumerPayments: 'x402 metered/free tracking with public/private/premium tiers on /skill/query; enforcement can be enabled later',

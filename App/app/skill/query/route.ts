@@ -1,5 +1,6 @@
 import { getAccessContext, readableKnowledgeWhere, recordUsage, requestId, sanitizeKnowledgeRow, visibilityCounts } from '../../../lib/access';
 import { withDb } from '../../../lib/db';
+import { cleanDesiredOutput, cleanPriority, cleanStringArray, createKnowledgeRequest, publicKnowledgeRequest } from '../../../lib/requests';
 import { getX402Policy, inspectX402Request, isX402Satisfied, publicX402, resolveX402Tier, storeX402Receipt, verifyX402WithFacilitator } from '../../../lib/x402';
 
 export const dynamic = 'force-dynamic';
@@ -11,6 +12,8 @@ export async function POST(request: Request) {
   const query = String(body.query || body.question || '').trim();
   const limit = Math.min(Number(body.limit || 8), 25);
   const mode = String(body.mode || 'context');
+  const minCoverageResults = Math.max(1, Math.min(Number(body.minCoverageResults || body.min_coverage_results || 1), 10));
+  const createRequestOnMiss = body.createRequestOnMiss !== false && body.create_request_on_miss !== false;
 
   if (!query) return Response.json({ ok: false, error: 'query_required' }, { status: 400 });
 
@@ -42,6 +45,27 @@ export async function POST(request: Request) {
       acl.params
     );
 
+    const coverage = {
+      status: res.rows.length >= minCoverageResults ? 'sufficient' : 'insufficient',
+      minResults: minCoverageResults,
+      resultCount: res.rows.length,
+      requestCreated: false,
+    };
+
+    const knowledgeRequest = createRequestOnMiss && res.rows.length < minCoverageResults
+      ? await createKnowledgeRequest(client, {
+          query,
+          requester: access,
+          sourceRequestId: id,
+          priority: cleanPriority(body.priority),
+          desiredOutput: cleanDesiredOutput(body.desired_output || body.output || mode),
+          missingTopics: cleanStringArray(body.missing_topics || body.missingTopics),
+          notes: String(body.notes || '').trim() || null,
+          coverage,
+          metadata: { endpoint: '/skill/query', mode, autoCreated: true },
+        })
+      : null;
+
     await recordUsage(client, {
       requestId: id,
       access,
@@ -54,9 +78,10 @@ export async function POST(request: Request) {
       amountPaid: receiptId ? Number(policy.price.amount || 0) : 0,
       paymentChain: policy.price.chain,
       paymentToken: policy.price.token,
+      successStatus: res.rows.length < minCoverageResults ? 'coverage_insufficient' : 'ok',
     });
 
-    return { paymentRequired: false as const, policy, x402, rows: res.rows };
+    return { paymentRequired: false as const, policy, x402, rows: res.rows, coverage: { ...coverage, requestCreated: Boolean(knowledgeRequest?.created) }, knowledgeRequest };
   });
 
   if (result.paymentRequired) {
@@ -69,7 +94,12 @@ export async function POST(request: Request) {
     mode,
     query,
     count: result.rows.length,
+    coverage: result.coverage,
     context: result.rows.map(sanitizeKnowledgeRow),
+    knowledgeRequest: result.knowledgeRequest ? {
+      created: result.knowledgeRequest.created,
+      request: publicKnowledgeRequest(result.knowledgeRequest.row),
+    } : null,
     x402: publicX402(result.policy, result.x402),
     guidance: 'Use this context with your own LLM/runtime. Knowledge does not require a specific model provider.',
   });
