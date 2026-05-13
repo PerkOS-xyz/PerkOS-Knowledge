@@ -159,6 +159,43 @@ export async function ensureSchema(client: Client) {
   await client.query(`ALTER TABLE x402_receipts ADD COLUMN IF NOT EXISTS currency text`);
 
   await client.query(`
+    CREATE TABLE IF NOT EXISTS knowledge_requests (
+      id text PRIMARY KEY,
+      query text NOT NULL,
+      normalized_topic text NOT NULL,
+      requester_agent_id text REFERENCES agents(id) ON DELETE SET NULL,
+      requester_wallet text,
+      requester_erc8004_identity text,
+      organization_id text REFERENCES organizations(id) ON DELETE SET NULL,
+      source_request_id text,
+      status text NOT NULL DEFAULT 'open',
+      priority text NOT NULL DEFAULT 'normal',
+      desired_output text NOT NULL DEFAULT 'brief',
+      missing_topics text[] NOT NULL DEFAULT '{}',
+      notes text,
+      claimed_by_agent_id text REFERENCES agents(id) ON DELETE SET NULL,
+      fulfilled_by_agent_id text REFERENCES agents(id) ON DELETE SET NULL,
+      fulfillment_item_ids text[] NOT NULL DEFAULT '{}',
+      validator_agent_id text REFERENCES agents(id) ON DELETE SET NULL,
+      validation_notes text,
+      coverage jsonb NOT NULL DEFAULT '{}'::jsonb,
+      metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      claimed_at timestamptz,
+      fulfilled_at timestamptz,
+      validated_at timestamptz,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+
+  await client.query(`
+    DO $$ BEGIN
+      ALTER TABLE knowledge_requests ADD CONSTRAINT knowledge_requests_status_check CHECK (status IN ('open', 'claimed', 'fulfilled', 'validated', 'closed', 'rejected'));
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$;
+  `);
+
+  await client.query(`
     CREATE TABLE IF NOT EXISTS contributor_quality_events (
       id bigserial PRIMARY KEY,
       research_item_id text REFERENCES research_items(id) ON DELETE CASCADE,
@@ -182,6 +219,10 @@ export async function ensureSchema(client: Client) {
   await client.query(`CREATE INDEX IF NOT EXISTS organization_agents_agent_idx ON organization_agents (agent_id, status)`);
   await client.query(`CREATE INDEX IF NOT EXISTS knowledge_usage_events_request_idx ON knowledge_usage_events (request_id)`);
   await client.query(`CREATE INDEX IF NOT EXISTS knowledge_usage_events_consumer_idx ON knowledge_usage_events (consumer_agent_id, served_at DESC)`);
+  await client.query(`CREATE INDEX IF NOT EXISTS knowledge_requests_status_idx ON knowledge_requests (status, priority, created_at DESC)`);
+  await client.query(`CREATE INDEX IF NOT EXISTS knowledge_requests_topic_idx ON knowledge_requests (normalized_topic, status)`);
+  await client.query(`CREATE INDEX IF NOT EXISTS knowledge_requests_requester_idx ON knowledge_requests (requester_agent_id, created_at DESC)`);
+  await client.query(`CREATE INDEX IF NOT EXISTS knowledge_requests_claimed_idx ON knowledge_requests (claimed_by_agent_id, status)`);
   await client.query(`CREATE INDEX IF NOT EXISTS x402_receipts_consumer_idx ON x402_receipts (consumer_agent_id, created_at DESC)`);
 }
 
