@@ -55,6 +55,21 @@ export async function getAccessContext(client: Client, request: Request): Promis
     agentId = identity.rows[0]?.agent_id || null;
   }
 
+  // Only persist/use agent ids that are onboarded and active. Some runtimes
+  // (OpenClaw/Hermes/LLM gateways) naturally send an `x-agent-id` before the
+  // Knowledge service has onboarded that agent. Treat those callers as public
+  // consumers instead of letting FK-backed usage/request writes fail with 500s.
+  if (agentId) {
+    const registered = await client.query(
+      `SELECT id
+       FROM agents
+       WHERE id = $1 AND status = 'active'
+       LIMIT 1`,
+      [agentId]
+    );
+    if (!registered.rowCount) agentId = null;
+  }
+
   if (agentId) {
     const memberships = await client.query(
       `SELECT organization_id
