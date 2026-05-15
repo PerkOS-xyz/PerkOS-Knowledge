@@ -92,6 +92,9 @@ export async function POST(request: Request) {
         : body.reject === true
           ? 'rejected'
           : assessment.status;
+      const qualityReasons = finalStatus === 'validated'
+        ? assessment.reasons.filter((reason) => reason !== 'awaiting independent validation')
+        : assessment.reasons;
       await client.query(
         `UPDATE research_items
          SET validation_status = $2,
@@ -102,14 +105,14 @@ export async function POST(request: Request) {
              validated_at = CASE WHEN $2 = 'validated' THEN now() ELSE validated_at END,
              updated_at = now()
          WHERE id = $1`,
-        [row.id, finalStatus, assessment.score, assessment.confidencePercent, assessment.tier, assessment.reasons]
+        [row.id, finalStatus, assessment.score, assessment.confidencePercent, assessment.tier, qualityReasons]
       );
       await client.query(
         `INSERT INTO contributor_quality_events (research_item_id, contributor_agent_id, event_type, score, metadata)
          VALUES ($1, $2, $3, $4, $5)`,
         [row.id, row.contributor_agent_id || null, finalStatus === 'validated' ? 'validated' : 'assessed', assessment.score, { validatorAgentId, assessment }]
       );
-      updated.push({ id: row.id, validationStatus: finalStatus, confidencePercent: assessment.confidencePercent, trustTier: assessment.tier, reasons: assessment.reasons });
+      updated.push({ id: row.id, validationStatus: finalStatus, confidencePercent: assessment.confidencePercent, trustTier: assessment.tier, reasons: qualityReasons });
     }
     return { updated };
   });
