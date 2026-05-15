@@ -207,6 +207,9 @@ export function sanitizeKnowledgeRow<T extends Record<string, unknown>>(row: T) 
     validationStatus: row.validation_status ?? null,
     sanitizationStatus: row.sanitization_status ?? null,
     qualityScore: row.quality_score ?? null,
+    confidencePercent: row.confidence_percent ?? row.quality_score ?? null,
+    trustTier: row.trust_tier ?? null,
+    qualityReasons: Array.isArray(row.quality_reasons) ? row.quality_reasons : [],
     usageCount: row.usage_count ?? null,
     updatedAt: row.updated_at ?? null,
   };

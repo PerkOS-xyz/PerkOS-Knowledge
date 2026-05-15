@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { withDb } from '../../../../lib/db';
+import { assessKnowledgeQuality, normalizeEvidence, shouldRejectIngest } from '../../../../lib/quality';
 import { upsertVectors, type VectorItem } from '../../../../lib/vector';
 import {
   assertProviderCanSubmit,
@@ -132,10 +133,10 @@ export async function POST(request: Request) {
       const requestedVisibility = normalizeProviderVisibility(item.visibility || defaultVisibility);
       const visibility = storedVisibility(requestedVisibility);
       const publishStatus = publicationStatus(requestedVisibility);
-      const validationStatus = defaultValidationStatus(textOrNull(item.validation_status));
+      const requestedValidationStatus = defaultValidationStatus(textOrNull(item.validation_status));
       const sanitizationStatus = defaultSanitizationStatus(requestedVisibility, textOrNull(item.sanitization_status));
       const contributionType = cleanContributionType(item.contribution_type || body.contribution_type);
-      const evidence = Array.isArray(item.evidence) ? item.evidence.slice(0, 25) : [];
+      const evidence = normalizeEvidence(item.evidence);
       const itemIdentity = await ensureAgentAndOrg(client, item, body, identity);
 
       const providerCheck = await assertProviderCanSubmit(
@@ -150,6 +151,23 @@ export async function POST(request: Request) {
 
       const id = contributionId(source, itemIdentity.organizationId, path);
       const hash = contentHash(item);
+      const quality = assessKnowledgeQuality({
+        title,
+        summary: item.summary || item.content,
+        confidence: item.confidence,
+        evidence,
+        validationStatus: requestedValidationStatus,
+        contributorAgentId: itemIdentity.contributorAgentId,
+        contentHash: hash,
+      });
+      const qualityRejectReason = shouldRejectIngest(quality, {
+        requireEvidence: process.env.KNOWLEDGE_REQUIRE_EVIDENCE !== '0',
+        allowPending: process.env.KNOWLEDGE_ALLOW_PENDING_INGEST !== '0',
+      });
+      if (qualityRejectReason) {
+        return { error: qualityRejectReason, status: 422 };
+      }
+      const validationStatus = quality.status;
 
       const vectorItem: VectorItem = {
         id,
@@ -174,8 +192,8 @@ export async function POST(request: Request) {
           (id, source, date, track, title, path, agents, chains, status, confidence, summary, raw,
            visibility, organization_id, contributor_agent_id, contributor_wallet, contributor_erc8004_identity,
            validation_status, sanitization_status, quality_score, contribution_type, publication_status, content_hash, evidence,
-           submitted_at, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,now(),now())
+           quality_reasons, confidence_percent, trust_tier, submitted_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,now(),now())
          ON CONFLICT (id) DO UPDATE SET
           source = EXCLUDED.source,
           date = EXCLUDED.date,
@@ -200,6 +218,9 @@ export async function POST(request: Request) {
           publication_status = EXCLUDED.publication_status,
           content_hash = EXCLUDED.content_hash,
           evidence = EXCLUDED.evidence,
+          quality_reasons = EXCLUDED.quality_reasons,
+          confidence_percent = EXCLUDED.confidence_percent,
+          trust_tier = EXCLUDED.trust_tier,
           updated_at = now()`,
         [
           id,
@@ -221,11 +242,14 @@ export async function POST(request: Request) {
           itemIdentity.contributorErc8004,
           validationStatus,
           sanitizationStatus,
-          item.quality_score ?? null,
+          item.quality_score ?? quality.score,
           contributionType,
           publishStatus,
           hash,
           JSON.stringify(evidence),
+          quality.reasons,
+          quality.confidencePercent,
+          quality.tier,
         ]
       );
       accepted.push({ id, path, visibility, publicationStatus: publishStatus, contributorAgentId: itemIdentity.contributorAgentId });

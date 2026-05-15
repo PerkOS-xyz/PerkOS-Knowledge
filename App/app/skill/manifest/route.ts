@@ -29,6 +29,7 @@ export async function GET() {
       adminOrganizations: 'GET/POST /api/admin/organizations',
       adminAgents: 'GET/POST /api/admin/agents',
       adminProviders: 'GET /api/admin/providers',
+      adminQuality: 'GET/POST /api/admin/quality',
       adminAclSelfTest: 'POST /api/admin/acl/self-test',
       adminX402Receipts: 'GET /api/admin/x402/receipts',
       adminX402Config: 'GET /api/admin/x402/config',
@@ -54,6 +55,14 @@ export async function GET() {
       publicAccess: 'public records only unless organization membership is verified',
       privateAccess: 'requires organization membership',
       walletExposure: 'wallets are not returned in public responses by default',
+    },
+    quality: {
+      confidenceField: 'confidencePercent',
+      defaultQueryMode: 'enterprise',
+      enterpriseMinConfidence: 45,
+      strictMode: 'qualityMode=validated_only or requireValidated=true',
+      ingestPolicy: 'evidence required by default; pending ingest allowed unless KNOWLEDGE_ALLOW_PENDING_INGEST=0',
+      validationEndpoint: 'GET/POST /api/admin/quality',
     },
     requestLoop: {
       autoCreateOnQueryMiss: 'POST /skill/query creates an open knowledge request when coverage is insufficient unless createRequestOnMiss=false',

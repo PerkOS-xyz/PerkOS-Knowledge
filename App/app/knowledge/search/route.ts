@@ -29,13 +29,22 @@ export async function GET(request: Request) {
     const acl = readableKnowledgeWhere(access, params);
     where.push(acl.sql);
 
+    const minConfidence = Math.max(0, Math.min(Number(url.searchParams.get('minConfidence') || url.searchParams.get('min_confidence') || 0), 100));
+    if (minConfidence > 0) {
+      acl.params.push(minConfidence);
+      where.push(`coalesce(confidence_percent, quality_score, 0) >= $${acl.params.length}`);
+    }
+    if (url.searchParams.get('requireValidated') === 'true' || url.searchParams.get('require_validated') === 'true') {
+      where.push(`validation_status = 'validated'`);
+    }
+
     acl.params.push(limit);
     const sql = `
       SELECT id, source, date, track, title, path, agents, chains, status, confidence, summary,
-             visibility, organization_id, validation_status, sanitization_status, quality_score, usage_count, updated_at
+             visibility, organization_id, validation_status, sanitization_status, quality_score, confidence_percent, trust_tier, quality_reasons, usage_count, updated_at
       FROM research_items
       WHERE ${where.join(' AND ')}
-      ORDER BY date DESC NULLS LAST, updated_at DESC
+      ORDER BY (validation_status = 'validated') DESC, coalesce(confidence_percent, quality_score, 0) DESC, date DESC NULLS LAST, updated_at DESC
       LIMIT $${acl.params.length}
     `;
 
