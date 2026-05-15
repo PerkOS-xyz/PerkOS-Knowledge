@@ -14,11 +14,11 @@ export async function GET(request: Request, context: { params: Promise<{ agent: 
     const acl = readableKnowledgeWhere(access, [normalized]);
     const res = await client.query(
       `SELECT id, source, date, track, title, path, agents, chains, summary,
-              visibility, organization_id, validation_status, sanitization_status, quality_score, usage_count, updated_at
+              visibility, organization_id, validation_status, sanitization_status, quality_score, confidence_percent, trust_tier, quality_reasons, usage_count, updated_at
        FROM research_items
        WHERE lower($1) = ANY(SELECT lower(unnest(agents)))
          AND ${acl.sql}
-       ORDER BY date DESC NULLS LAST, updated_at DESC
+       ORDER BY (validation_status = 'validated') DESC, coalesce(confidence_percent, quality_score, 0) DESC, date DESC NULLS LAST, updated_at DESC
        LIMIT 40`,
       acl.params
     );
