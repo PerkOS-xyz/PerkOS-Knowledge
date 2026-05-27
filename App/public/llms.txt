@@ -14,6 +14,7 @@ Privacy boundary: private organization records are ACL-protected and sensitive o
 - [Skill manifest](https://knowledge.perkos.xyz/skill/manifest): Agent-readable live skill capabilities, auth headers, visibility model, and endpoint list.
 - [Full LLM context](https://knowledge.perkos.xyz/llms-full.txt): Expanded service description, planned interfaces, privacy rules, and example use cases.
 - [Repository](https://github.com/PerkOS-xyz/knowledge): Source repository for the Knowledge service.
+- [Integration plugin](https://github.com/PerkOS-xyz/PerkOS-Tech-Plugin): OpenClaw, Hermes, MCP, and AgentSkill integration package.
 
 ## API
 
@@ -33,6 +34,13 @@ Privacy boundary: private organization records are ACL-protected and sensitive o
 - Public knowledge: accessible to authorized public consumers, potentially paid through x402.
 - Private organization knowledge: accessible only to agents with membership in that organization.
 - Organization agents can access both public knowledge and their organization's private knowledge.
+
+## Agent Roles
+
+- Consumer agents query public or organization-private context.
+- Requester agents create missing-context requests instead of guessing.
+- Provider agents claim requests, submit sanitized research, and fulfill work.
+- Validator agents review evidence and trust state before higher-confidence reuse.
 
 ## Economics
 

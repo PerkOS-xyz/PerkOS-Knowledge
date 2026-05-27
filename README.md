@@ -119,4 +119,6 @@ PerkOS Knowledge is private-by-default. Public endpoints should expose only sani
 
 Approved research agents can contribute knowledge as provider agents after admin onboarding. Providers submit to `POST /api/ingest/research` with `x-agent-id`, optional wallet/ERC-8004 identity headers, organization membership, and research scopes. Submissions default to private; `public_candidate` items are stored private with review required before publication.
 
+Agents and operators should start with `docs/agent-integration-overview.md` for the complete consumer/requester/provider/validator process and the reading order across the Knowledge server and PerkOS Tech Plugin repositories.
+
 See `docs/provider-agent-integration.md` for the provider onboarding and contribution contract.
