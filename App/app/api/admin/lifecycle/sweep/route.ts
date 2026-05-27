@@ -25,8 +25,21 @@
  */
 import { requireAdmin } from "../../../../../lib/admin";
 import { withDb } from "../../../../../lib/db";
-import { runLifecycleSweep } from "../../../../../lib/lifecycleSweep";
+import { runLifecycleSweep, type LifecycleSweepStats } from "../../../../../lib/lifecycleSweep";
+import { getMetrics } from "../../../../../lib/metrics";
 import { deleteVectors } from "../../../../../lib/vector";
+
+function recordSweepMetrics(stats: LifecycleSweepStats) {
+  const m = getMetrics();
+  const dryRun = stats.dryRun ? "true" : "false";
+  m.lifecycleSweepTotal.inc({ result: stats.vectorsError ? "partial" : "ok", dryRun });
+  m.lifecycleSweepDuration.observe({ dryRun }, stats.durationMs / 1000);
+  if (stats.archived) m.lifecycleTransitionsTotal.inc({ to: "archived" }, stats.archived);
+  if (stats.evicted) m.lifecycleTransitionsTotal.inc({ to: "evicted" }, stats.evicted);
+  if (stats.revived) m.lifecycleTransitionsTotal.inc({ to: "working" }, stats.revived);
+  if (stats.hardDeleted) m.lifecycleHardDeletedTotal.inc(stats.hardDeleted);
+  if (stats.vectorsDeleted) m.lifecycleVectorsDeletedTotal.inc(stats.vectorsDeleted);
+}
 
 export const dynamic = "force-dynamic";
 
@@ -49,13 +62,25 @@ export async function POST(request: Request) {
   // would have errored).
   const skipVectorCleanup = body.skipVectorCleanup === true || body.skip_vector_cleanup === true;
 
-  const stats = await withDb((client) =>
-    runLifecycleSweep(
-      client,
-      { deleteVectors: skipVectorCleanup ? undefined : deleteVectors },
-      { dryRun, retentionDays, batchSize },
-    ),
-  );
+  let stats: LifecycleSweepStats;
+  try {
+    stats = await withDb((client) =>
+      runLifecycleSweep(
+        client,
+        {
+          deleteVectors: skipVectorCleanup ? undefined : deleteVectors,
+          recordStats: recordSweepMetrics,
+        },
+        { dryRun, retentionDays, batchSize },
+      ),
+    );
+  } catch (err) {
+    getMetrics().lifecycleSweepTotal.inc({
+      result: "error",
+      dryRun: dryRun ? "true" : "false",
+    });
+    throw err;
+  }
 
   return Response.json({ ok: true, stats });
 }

@@ -1,0 +1,173 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "Datasource that scrapes knowledge.perkos.xyz/api/metrics",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "title": "PerkOS — Knowledge",
+  "uid": "perkos-knowledge",
+  "tags": ["perkos", "knowledge"],
+  "schemaVersion": 38,
+  "version": 1,
+  "timezone": "",
+  "refresh": "1m",
+  "time": { "from": "now-24h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": { "selected": false, "text": "Prometheus", "value": "${DS_PROMETHEUS}" },
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Lifecycle sweeps — last 24h",
+      "description": "Total sweep invocations by outcome. 'partial' means the Postgres deletes succeeded but Qdrant cleanup left orphans — look at vectors_error in the cron log.",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "sum by (result) (increase(perkos_knowledge_lifecycle_sweep_total[24h]))",
+          "legendFormat": "{{result}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "horizontal",
+        "textMode": "value_and_name",
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Hard-deletes — last 24h",
+      "description": "Rows hard-deleted from research_items by the retention sweep, and the matching Qdrant points removed alongside. Large gap = orphan points accumulating.",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "sum(increase(perkos_knowledge_lifecycle_hard_deleted_total[24h]))",
+          "legendFormat": "rows",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(increase(perkos_knowledge_lifecycle_vectors_deleted_total[24h]))",
+          "legendFormat": "qdrant points",
+          "refId": "B"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "horizontal",
+        "textMode": "value_and_name",
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 3,
+      "type": "piechart",
+      "title": "Lifecycle transitions — last 24h",
+      "description": "Tier changes the sweep performed: into archived (slow drift), into evicted (eligible for hard-delete in N days), back to working (revival).",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "sum by (to) (increase(perkos_knowledge_lifecycle_transitions_total[24h]))",
+          "legendFormat": "→ {{to}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "legend": { "displayMode": "list", "placement": "right" },
+        "pieType": "donut"
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Sweep duration p50 / p95",
+      "description": "Lifecycle sweep wall-clock. Sustained p95 > 10s usually means we're scanning too many rows per batch — bump batchSize down or split the sweep.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(perkos_knowledge_lifecycle_sweep_duration_seconds_bucket[15m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(perkos_knowledge_lifecycle_sweep_duration_seconds_bucket[15m])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 5 }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Re-embed — items / minute",
+      "description": "Re-embed pass throughput. Drops to zero when there's nothing left to migrate, which is the expected steady state after a one-off catch-up.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "sum by (result) (rate(perkos_knowledge_reembed_items_total[5m])) * 60",
+          "legendFormat": "{{result}}/min",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "drawStyle": "bars", "fillOpacity": 60, "stacking": { "mode": "normal" } }
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Process — RSS + event loop lag",
+      "description": "Default Node metrics for the knowledge container. Spikes here usually precede a Qdrant or Postgres issue surfacing in the domain metrics above.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "perkos_knowledge_process_resident_memory_bytes",
+          "legendFormat": "RSS (bytes)",
+          "refId": "A"
+        },
+        {
+          "expr": "perkos_knowledge_nodejs_eventloop_lag_seconds",
+          "legendFormat": "event loop lag (s)",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 0 }
+        }
+      }
+    }
+  ]
+}

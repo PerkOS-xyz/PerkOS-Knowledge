@@ -184,4 +184,27 @@ describe("runReembed", () => {
     expect(stats.startedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(stats.durationMs).toBeGreaterThanOrEqual(0);
   });
+
+  it("calls recordStats once with the final stats", async () => {
+    const { client } = makeFakeClient([[]]);
+    const recordStats = vi.fn();
+    const stats = await runReembed(
+      client as never,
+      { ...okUpsert(), recordStats },
+    );
+    expect(recordStats).toHaveBeenCalledTimes(1);
+    expect(recordStats).toHaveBeenCalledWith(stats);
+  });
+
+  it("a throwing recordStats does not break the pass", async () => {
+    const { client } = makeFakeClient([[]]);
+    const recordStats = vi.fn(() => {
+      throw new Error("metrics writer down");
+    });
+    const stats = await runReembed(
+      client as never,
+      { ...okUpsert(), recordStats },
+    );
+    expect(stats).toBeDefined();
+  });
 });

@@ -102,6 +102,10 @@ For right-to-erasure under GDPR a `retentionDays=0` sweep targeted at the affect
 ## What the sweep does NOT do
 
 - **It does not delete `working` or `archived` rows.** Only `evicted` rows with `evicted_at` older than the cutoff.
-- **It does not cascade to Qdrant.** Vector points for evicted rows remain in the `perkos_research` Qdrant collection until a separate cleanup pass — that's a known follow-up.
 - **It does not back up.** Postgres dumps are the operator's job (see infra runbook), not this sweep.
 - **It does not anonymize, only deletes.** If a future requirement is "keep the row but strip PII", we'd add a separate `lifecycle_tier = 'anonymized'` path.
+
+## What it DOES do (formerly gaps)
+
+- **It cleans up Qdrant.** Hard-deletes in Postgres now trigger a `deleteVectors()` call into the `perkos_research` collection (PR #32). Failures are non-fatal and surface as `stats.vectorsError`; orphans can be retried by a later sweep or a one-shot janitor.
+- **It emits Prometheus metrics.** `perkos_knowledge_lifecycle_sweep_total`, `perkos_knowledge_lifecycle_transitions_total{to}`, `perkos_knowledge_lifecycle_hard_deleted_total`, `perkos_knowledge_lifecycle_vectors_deleted_total`, and a sweep-duration histogram are exposed at `/api/metrics`. The `grafana/dashboards/perkos-knowledge.json` board in this repo visualizes them.

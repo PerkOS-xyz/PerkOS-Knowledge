@@ -56,6 +56,12 @@ export type ReembedDeps = {
    * this is `upsertVectors` from lib/vector.ts.
    */
   upsert: (items: VectorItem[]) => Promise<ReembedUpsertResult>;
+  /**
+   * Optional. Called once per run with the final stats so the admin
+   * route can wire Prometheus counters without dragging prom-client
+   * into this module's unit tests.
+   */
+  recordStats?: (stats: ReembedStats) => void;
 };
 
 export type ReembedOptions = {
@@ -224,5 +230,12 @@ export async function runReembed(
   }
 
   stats.durationMs = Date.now() - t0;
+  if (deps.recordStats) {
+    try {
+      deps.recordStats(stats);
+    } catch {
+      // Never let the metrics recorder break the pass.
+    }
+  }
   return stats;
 }

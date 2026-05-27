@@ -308,4 +308,27 @@ describe("runLifecycleSweep", () => {
       expect(stats.vectorsDeleted).toBe(0);
     });
   });
+
+  describe("recordStats hook", () => {
+    it("is called once with the final stats", async () => {
+      const { client } = makeFakeClient([[]], []);
+      const recordStats = vi.fn();
+
+      const stats = await runLifecycleSweep(client as never, { recordStats });
+
+      expect(recordStats).toHaveBeenCalledTimes(1);
+      expect(recordStats).toHaveBeenCalledWith(stats);
+    });
+
+    it("a throwing recordStats does not break the sweep", async () => {
+      const { client } = makeFakeClient([[]], []);
+      const recordStats = vi.fn(() => {
+        throw new Error("metrics writer down");
+      });
+
+      const stats = await runLifecycleSweep(client as never, { recordStats });
+      expect(stats).toBeDefined();
+      expect(stats.hardDeleted).toBe(0);
+    });
+  });
 });
