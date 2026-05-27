@@ -111,6 +111,21 @@ export async function ensureSchema(client: Client) {
   await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS trust_tier text NOT NULL DEFAULT 'untrusted'`);
   await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS submitted_at timestamptz`);
   await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS validated_at timestamptz`);
+  // Lifecycle tier — existing rows default to "working" so a sweep
+  // can re-evaluate them later without a one-time backfill. See
+  // lib/lifecycle.ts for the decision rules.
+  await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS lifecycle_tier text NOT NULL DEFAULT 'working'`);
+  await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS lifecycle_evaluated_at timestamptz`);
+  await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS last_used_at timestamptz`);
+  await client.query(`
+    DO $$ BEGIN
+      ALTER TABLE research_items ADD CONSTRAINT research_items_lifecycle_tier_check CHECK (lifecycle_tier IN ('working', 'archived', 'evicted'));
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$;
+  `);
+  // Lets the per-sweep query rapidly find candidates eligible for
+  // re-evaluation, sorted oldest-touched first.
+  await client.query(`CREATE INDEX IF NOT EXISTS research_items_lifecycle_idx ON research_items (lifecycle_tier, last_used_at NULLS FIRST, created_at)`);
 
   await client.query(`
     DO $$ BEGIN
