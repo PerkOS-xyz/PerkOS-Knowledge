@@ -172,6 +172,40 @@ export async function upsertVectors(items: VectorItem[]) {
   return { ok: true, collection: COLLECTION, upserted: points.length };
 }
 
+/**
+ * Bulk-delete points from Qdrant by their research_item id.
+ *
+ * Used by the lifecycle sweep when it hard-deletes evicted rows from
+ * Postgres — otherwise the corresponding Qdrant points would orphan
+ * (still searchable, no backing row).
+ *
+ * We resolve research_item id → Qdrant point id locally via the same
+ * `pointId()` helper used at upsert; the Qdrant filter API can't do
+ * this for us because the payload doesn't carry the raw id (the
+ * payload id IS the qdrant uuid).
+ *
+ * Returns `skipped: true` when Qdrant isn't configured — matches the
+ * convention of upsertVectors/searchVectors. Errors don't throw so a
+ * Qdrant outage doesn't break the sweep loop; the caller logs the
+ * error and moves on (orphans can be cleaned in a later sweep).
+ */
+export async function deleteVectors(ids: string[]) {
+  const base = qdrantUrl();
+  if (!base || !ids.length) return { ok: false, skipped: true, deleted: 0 };
+
+  const points = ids.map(pointId);
+  const res = await fetch(`${base}/collections/${COLLECTION}/points/delete?wait=true`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ points }),
+  });
+
+  if (!res.ok) {
+    return { ok: false, collection: COLLECTION, error: await res.text(), deleted: 0 };
+  }
+  return { ok: true, collection: COLLECTION, deleted: points.length };
+}
+
 export async function searchVectors(query: string, limit = 10, filter?: unknown) {
   const base = qdrantUrl();
   if (!base) return { ok: false, skipped: true, results: [] };
