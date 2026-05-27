@@ -133,6 +133,13 @@ export async function ensureSchema(client: Client) {
   // Hard-delete sweep scans evicted rows by their eviction timestamp.
   await client.query(`CREATE INDEX IF NOT EXISTS research_items_evicted_at_idx ON research_items (evicted_at) WHERE evicted_at IS NOT NULL`);
 
+  // Tracks which embedding provider last wrote this row's vector in
+  // Qdrant. Null = legacy (assumed hash). The re-embed offline pass
+  // uses this to skip already-done rows on resume — see lib/reembed.ts.
+  await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS vector_provider text`);
+  await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS vector_embedded_at timestamptz`);
+  await client.query(`CREATE INDEX IF NOT EXISTS research_items_vector_provider_idx ON research_items (vector_provider, id)`);
+
   await client.query(`
     DO $$ BEGIN
       ALTER TABLE research_items ADD CONSTRAINT research_items_visibility_check CHECK (visibility IN ('public', 'private'));
