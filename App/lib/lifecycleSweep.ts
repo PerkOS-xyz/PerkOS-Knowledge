@@ -66,6 +66,13 @@ export type LifecycleSweepDeps = {
    * cron loop, which is worse.
    */
   deleteVectors?: (ids: string[]) => Promise<VectorDeleteResult>;
+  /**
+   * Optional. Called once per run with the final stats. Used to wire
+   * Prometheus counters/histograms from lib/metrics.ts without
+   * importing prom-client into this module (so unit tests don't drag
+   * the metrics surface in).
+   */
+  recordStats?: (stats: LifecycleSweepStats) => void;
 };
 
 export type LifecycleSweepStats = {
@@ -304,5 +311,12 @@ export async function runLifecycleSweep(
   }
 
   stats.durationMs = Date.now() - t0;
+  if (deps.recordStats) {
+    try {
+      deps.recordStats(stats);
+    } catch {
+      // Never let a metrics writer break a successful sweep.
+    }
+  }
   return stats;
 }

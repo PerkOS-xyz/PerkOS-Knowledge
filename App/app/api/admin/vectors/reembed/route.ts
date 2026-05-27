@@ -23,8 +23,18 @@
  */
 import { requireAdmin } from "../../../../../lib/admin";
 import { withDb } from "../../../../../lib/db";
-import { runReembed } from "../../../../../lib/reembed";
+import { getMetrics } from "../../../../../lib/metrics";
+import { runReembed, type ReembedStats } from "../../../../../lib/reembed";
 import { upsertVectors } from "../../../../../lib/vector";
+
+function recordReembedMetrics(stats: ReembedStats) {
+  const m = getMetrics();
+  const dryRun = stats.dryRun ? "true" : "false";
+  m.reembedRunTotal.inc({ result: stats.failed > 0 ? "partial" : "ok", dryRun });
+  m.reembedRunDuration.observe({ dryRun }, stats.durationMs / 1000);
+  if (stats.reembedded) m.reembedItemsTotal.inc({ result: "reembedded" }, stats.reembedded);
+  if (stats.failed) m.reembedItemsTotal.inc({ result: "failed" }, stats.failed);
+}
 
 export const dynamic = "force-dynamic";
 
@@ -49,13 +59,22 @@ export async function POST(request: Request) {
   const dryRun = body.dryRun === true || body.dry_run === true;
   const limit = clamp(body.limit, 1, 100_000);
 
-  const stats = await withDb((client) =>
-    runReembed(
-      client,
-      { upsert: upsertVectors },
-      { targetProvider, batchSize, dryRun, limit },
-    ),
-  );
+  let stats: ReembedStats;
+  try {
+    stats = await withDb((client) =>
+      runReembed(
+        client,
+        { upsert: upsertVectors, recordStats: recordReembedMetrics },
+        { targetProvider, batchSize, dryRun, limit },
+      ),
+    );
+  } catch (err) {
+    getMetrics().reembedRunTotal.inc({
+      result: "error",
+      dryRun: dryRun ? "true" : "false",
+    });
+    throw err;
+  }
 
   return Response.json({ ok: true, stats });
 }
