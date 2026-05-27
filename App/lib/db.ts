@@ -111,6 +111,18 @@ export async function ensureSchema(client: Client) {
   await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS trust_tier text NOT NULL DEFAULT 'untrusted'`);
   await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS submitted_at timestamptz`);
   await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS validated_at timestamptz`);
+  // Originally the table only carried updated_at. The lifecycle sweep
+  // (#28) judges age by createdAt, so we add a real created_at and
+  // backfill legacy rows from updated_at as the historical proxy.
+  // Three-step idempotent migration:
+  //   1) add nullable column
+  //   2) backfill rows where it's still NULL
+  //   3) set default + NOT NULL for forward writes
+  // Re-running this block is a no-op once all rows have a value.
+  await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS created_at timestamptz`);
+  await client.query(`UPDATE research_items SET created_at = COALESCE(updated_at, NOW()) WHERE created_at IS NULL`);
+  await client.query(`ALTER TABLE research_items ALTER COLUMN created_at SET DEFAULT NOW()`);
+  await client.query(`ALTER TABLE research_items ALTER COLUMN created_at SET NOT NULL`);
   // Lifecycle tier — existing rows default to "working" so a sweep
   // can re-evaluate them later without a one-time backfill. See
   // lib/lifecycle.ts for the decision rules.
