@@ -1,7 +1,32 @@
 import crypto from 'crypto';
 
+import { embedWithOpenAI } from './encoders/openai';
+
 export const VECTOR_SIZE = 384;
 const COLLECTION = process.env.QDRANT_COLLECTION || 'perkos_research';
+
+/**
+ * Embedding provider selection.
+ *
+ *   "hash"   — sync SHA256-based hash embed (default; backwards-compat).
+ *              Fast, deterministic, BUT loses all semantic similarity.
+ *              Keeps the system functional without external API deps.
+ *   "openai" — calls the OpenAI Embeddings API with
+ *              text-embedding-3-small + dimensions=384 to match the
+ *              existing Qdrant collection. Adds semantic similarity
+ *              at a real-world cost of <$0.50/year ingest at our
+ *              current item volume.
+ *
+ * Fallback: if "openai" is configured but the API call fails, we
+ * surface the error to the caller. We do NOT silently fall back to
+ * hash because that would mix incompatible vector spaces in the same
+ * Qdrant collection — searches would return inconsistent results
+ * depending on which encoder produced each item.
+ */
+function embeddingProvider(): "hash" | "openai" {
+  const p = (process.env.KNOWLEDGE_EMBEDDING_PROVIDER || 'hash').toLowerCase();
+  return p === 'openai' ? 'openai' : 'hash';
+}
 
 export type VectorItem = {
   id: string;
@@ -38,6 +63,12 @@ function tokens(text: string) {
     .filter((token) => token.length > 2);
 }
 
+/**
+ * Synchronous hash embedding. Kept exported because:
+ *   1. It's the default when no semantic encoder is configured.
+ *   2. Tests + tooling that don't want an API round-trip use it.
+ * For real semantic search use `embed()` (async) below.
+ */
 export function embedText(text: string) {
   const vector = new Array<number>(VECTOR_SIZE).fill(0);
   for (const token of tokens(text)) {
@@ -49,6 +80,41 @@ export function embedText(text: string) {
 
   const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0)) || 1;
   return vector.map((value) => Number((value / norm).toFixed(6)));
+}
+
+/**
+ * Async embed — routes by KNOWLEDGE_EMBEDDING_PROVIDER. This is the
+ * call site every new code path should use; `embedText` remains the
+ * sync fallback for legacy / test paths.
+ *
+ * Behavior matrix:
+ *   provider="hash"   (default) → uses embedText synchronously (no I/O)
+ *   provider="openai" + key set → calls OpenAI text-embedding-3-small
+ *                                  with dimensions=384 to match the
+ *                                  Qdrant collection size
+ *   provider="openai" + key UNSET → throws (fail-loud rather than
+ *                                  silently mixing vector spaces)
+ *
+ * The returned vector is ALWAYS VECTOR_SIZE (384) regardless of
+ * provider — the Qdrant collection contract doesn't move.
+ */
+export async function embed(text: string): Promise<number[]> {
+  if (embeddingProvider() === 'openai') {
+    const apiKey = process.env.OPENAI_API_KEY || '';
+    if (!apiKey) {
+      throw new Error(
+        'KNOWLEDGE_EMBEDDING_PROVIDER=openai but OPENAI_API_KEY is unset. ' +
+        'Set the key or switch the provider back to "hash".',
+      );
+    }
+    const out = await embedWithOpenAI(text, {
+      apiKey,
+      model: process.env.KNOWLEDGE_EMBEDDING_MODEL || undefined,
+      dimensions: VECTOR_SIZE,
+    });
+    return out.vector;
+  }
+  return embedText(text);
 }
 
 export async function ensureVectorCollection() {
@@ -83,11 +149,18 @@ export async function upsertVectors(items: VectorItem[]) {
   const collection = await ensureVectorCollection();
   if (!collection.ok) return { ...collection, upserted: 0 };
 
-  const points = items.map((item) => ({
-    id: pointId(item.id),
-    vector: embedText(`${item.title}\n${item.summary || ''}\n${item.track || ''}\n${item.path}`),
-    payload: item,
-  }));
+  // Route through the async `embed()` so production deploys with
+  // KNOWLEDGE_EMBEDDING_PROVIDER=openai get real semantic vectors,
+  // while default deploys (or tests) keep the sync hash behavior.
+  const points = await Promise.all(
+    items.map(async (item) => ({
+      id: pointId(item.id),
+      vector: await embed(
+        `${item.title}\n${item.summary || ''}\n${item.track || ''}\n${item.path}`,
+      ),
+      payload: item,
+    })),
+  );
 
   const res = await fetch(`${base}/collections/${COLLECTION}/points?wait=true`, {
     method: 'PUT',
@@ -104,7 +177,11 @@ export async function searchVectors(query: string, limit = 10, filter?: unknown)
   if (!base) return { ok: false, skipped: true, results: [] };
 
   await ensureVectorCollection();
-  const body: Record<string, unknown> = { vector: embedText(query), limit, with_payload: true };
+  const body: Record<string, unknown> = {
+    vector: await embed(query),
+    limit,
+    with_payload: true,
+  };
   if (filter) body.filter = filter;
 
   const res = await fetch(`${base}/collections/${COLLECTION}/points/search`, {
