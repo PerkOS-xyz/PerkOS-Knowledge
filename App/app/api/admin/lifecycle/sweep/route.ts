@@ -26,6 +26,7 @@
 import { requireAdmin } from "../../../../../lib/admin";
 import { withDb } from "../../../../../lib/db";
 import { runLifecycleSweep } from "../../../../../lib/lifecycleSweep";
+import { deleteVectors } from "../../../../../lib/vector";
 
 export const dynamic = "force-dynamic";
 
@@ -42,13 +43,18 @@ export async function POST(request: Request) {
   const dryRun = body.dryRun === true || body.dry_run === true;
   const retentionDays = clampNumber(body.retentionDays ?? body.retention_days, 1, 3650);
   const batchSize = clampNumber(body.batchSize ?? body.batch_size, 10, 5000);
+  // Optional: skip Qdrant cleanup entirely if the operator wants to
+  // run a Postgres-only sweep (rare; mostly useful when Qdrant is
+  // down and we don't want hardDeleted = 0 just because cleanup
+  // would have errored).
+  const skipVectorCleanup = body.skipVectorCleanup === true || body.skip_vector_cleanup === true;
 
   const stats = await withDb((client) =>
-    runLifecycleSweep(client, {
-      dryRun,
-      retentionDays,
-      batchSize,
-    }),
+    runLifecycleSweep(
+      client,
+      { deleteVectors: skipVectorCleanup ? undefined : deleteVectors },
+      { dryRun, retentionDays, batchSize },
+    ),
   );
 
   return Response.json({ ok: true, stats });

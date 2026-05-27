@@ -15,12 +15,12 @@ const day = (n: number) => new Date(NOW.getTime() - n * 86_400_000);
  * `pages` are returned in order; once exhausted, the next call
  * returns an empty rowset (which terminates the sweep loop).
  */
-function makeFakeClient(pages: Array<Array<Record<string, unknown>>>) {
+function makeFakeClient(
+  pages: Array<Array<Record<string, unknown>>>,
+  hardDeletedIds: string[] = ["del-1", "del-2", "del-3", "del-4", "del-5", "del-6", "del-7"],
+) {
   const calls: Array<{ sql: string; params: unknown[] }> = [];
   let cursor = 0;
-  // The hard-delete sweep returns a fake rowCount = 7 so we can
-  // assert it propagated to stats.hardDeleted.
-  const hardDeletedRowCount = 7;
 
   const client = {
     query: vi.fn(async (sql: string, params?: unknown[]) => {
@@ -31,7 +31,13 @@ function makeFakeClient(pages: Array<Array<Record<string, unknown>>>) {
       if (normalized.startsWith("ROLLBACK")) return { rowCount: 0, rows: [] };
       if (normalized.startsWith("UPDATE")) return { rowCount: 1, rows: [] };
       if (normalized.startsWith("DELETE")) {
-        return { rowCount: hardDeletedRowCount, rows: [] };
+        // RETURNING id — the new hardDeleteExpired collects ids for
+        // Qdrant cleanup. Default fake gives 7 ids matching the
+        // previous test's expectation.
+        return {
+          rowCount: hardDeletedIds.length,
+          rows: hardDeletedIds.map((id) => ({ id })),
+        };
       }
       // SELECT path — serve the next scripted page.
       if (cursor >= pages.length) return { rowCount: 0, rows: [] };
@@ -74,14 +80,16 @@ describe("runLifecycleSweep", () => {
       ],
     ]);
 
-    const stats = await runLifecycleSweep(client as never, { now: NOW });
+    const stats = await runLifecycleSweep(client as never, {}, { now: NOW });
 
     expect(stats.scanned).toBe(5);
     expect(stats.archived).toBe(1); // stale-1
     expect(stats.evicted).toBe(1); // evict-1
     expect(stats.revived).toBe(1); // revive-1
     expect(stats.unchanged).toBe(2); // fresh-1 + keeper-1
-    expect(stats.hardDeleted).toBe(7); // from fake DELETE
+    expect(stats.hardDeleted).toBe(7); // from fake DELETE RETURNING 7 ids
+    expect(stats.vectorsDeleted).toBe(0); // no deps.deleteVectors → no cleanup attempted
+    expect(stats.vectorsError).toBeNull();
     expect(stats.dryRun).toBe(false);
 
     // Verify the SQL we emitted: BEGIN, archive UPDATE, evict UPDATE,
@@ -118,10 +126,11 @@ describe("runLifecycleSweep", () => {
       ],
     ]);
 
-    const stats = await runLifecycleSweep(client as never, {
-      now: NOW,
-      dryRun: true,
-    });
+    const stats = await runLifecycleSweep(
+      client as never,
+      {},
+      { now: NOW, dryRun: true },
+    );
 
     expect(stats.scanned).toBe(1);
     expect(stats.archived).toBe(1); // counted in plan…
@@ -145,10 +154,11 @@ describe("runLifecycleSweep", () => {
       [baseRow({ id: "c", created_at: day(50) })], // short → terminate
     ]);
 
-    const stats = await runLifecycleSweep(client as never, {
-      now: NOW,
-      batchSize: 2,
-    });
+    const stats = await runLifecycleSweep(
+      client as never,
+      {},
+      { now: NOW, batchSize: 2 },
+    );
 
     expect(stats.scanned).toBe(3);
     const selects = calls.filter((c) => c.sql.trim().startsWith("SELECT"));
@@ -179,7 +189,7 @@ describe("runLifecycleSweep", () => {
     };
 
     await expect(
-      runLifecycleSweep(client as never, { now: NOW }),
+      runLifecycleSweep(client as never, {}, { now: NOW }),
     ).rejects.toThrow(/simulated db failure/);
 
     const verbs = calls.map((c) => c.sql.trim().split(/\s+/)[0]);
@@ -197,11 +207,11 @@ describe("runLifecycleSweep", () => {
 
   it("respects custom retentionDays and batchSize", async () => {
     const { client, calls } = makeFakeClient([[]]);
-    await runLifecycleSweep(client as never, {
-      retentionDays: 30,
-      batchSize: 10,
-      config: DEFAULT_LIFECYCLE_CONFIG,
-    });
+    await runLifecycleSweep(
+      client as never,
+      {},
+      { retentionDays: 30, batchSize: 10, config: DEFAULT_LIFECYCLE_CONFIG },
+    );
 
     const select = calls.find((c) => c.sql.trim().startsWith("SELECT"));
     expect(select!.params).toContain(10); // batchSize
@@ -216,10 +226,86 @@ describe("runLifecycleSweep", () => {
       [baseRow({ id: "fresh-a", created_at: day(3) })],
     ]);
 
-    await runLifecycleSweep(client as never, { now: NOW });
+    await runLifecycleSweep(client as never, {}, { now: NOW });
 
     const verbs = calls.map((c) => c.sql.trim().split(/\s+/)[0]);
     expect(verbs).not.toContain("BEGIN"); // no transaction opened
     expect(verbs).toContain("DELETE"); // hard-delete still runs
+  });
+
+  describe("Qdrant cleanup integration", () => {
+    it("calls deleteVectors with the ids returned from DELETE", async () => {
+      const { client } = makeFakeClient([[]], ["a", "b", "c"]);
+      const deleteVectors = vi.fn(async () => ({ ok: true, deleted: 3 }));
+
+      const stats = await runLifecycleSweep(client as never, { deleteVectors });
+
+      expect(deleteVectors).toHaveBeenCalledTimes(1);
+      expect(deleteVectors).toHaveBeenCalledWith(["a", "b", "c"]);
+      expect(stats.hardDeleted).toBe(3);
+      expect(stats.vectorsDeleted).toBe(3);
+      expect(stats.vectorsError).toBeNull();
+    });
+
+    it("does NOT call deleteVectors when no rows were hard-deleted", async () => {
+      const { client } = makeFakeClient([[]], []);
+      const deleteVectors = vi.fn(async () => ({ ok: true, deleted: 0 }));
+
+      const stats = await runLifecycleSweep(client as never, { deleteVectors });
+
+      expect(deleteVectors).not.toHaveBeenCalled();
+      expect(stats.hardDeleted).toBe(0);
+      expect(stats.vectorsDeleted).toBe(0);
+    });
+
+    it("does NOT call deleteVectors in dryRun mode", async () => {
+      const { client } = makeFakeClient([[]], ["a"]);
+      const deleteVectors = vi.fn(async () => ({ ok: true, deleted: 1 }));
+
+      await runLifecycleSweep(client as never, { deleteVectors }, { dryRun: true });
+
+      expect(deleteVectors).not.toHaveBeenCalled();
+    });
+
+    it("records vectorsError when Qdrant returns failure (does NOT throw)", async () => {
+      const { client } = makeFakeClient([[]], ["a", "b"]);
+      const deleteVectors = vi.fn(async () => ({
+        ok: false,
+        error: "qdrant 503 unavailable",
+      }));
+
+      const stats = await runLifecycleSweep(client as never, { deleteVectors });
+
+      expect(stats.hardDeleted).toBe(2); // Postgres delete still succeeded
+      expect(stats.vectorsDeleted).toBe(0);
+      expect(stats.vectorsError).toContain("qdrant 503");
+    });
+
+    it("catches exceptions from deleteVectors and stamps vectorsError", async () => {
+      const { client } = makeFakeClient([[]], ["a"]);
+      const deleteVectors = vi.fn(async () => {
+        throw new Error("network down");
+      });
+
+      const stats = await runLifecycleSweep(client as never, { deleteVectors });
+
+      expect(stats.hardDeleted).toBe(1);
+      expect(stats.vectorsError).toContain("network down");
+    });
+
+    it("treats deleteVectors.skipped=true as no-error (Qdrant not configured)", async () => {
+      const { client } = makeFakeClient([[]], ["a"]);
+      const deleteVectors = vi.fn(async () => ({
+        ok: false,
+        skipped: true,
+        deleted: 0,
+      }));
+
+      const stats = await runLifecycleSweep(client as never, { deleteVectors });
+
+      expect(stats.hardDeleted).toBe(1);
+      expect(stats.vectorsError).toBeNull(); // skipped is not an error
+      expect(stats.vectorsDeleted).toBe(0);
+    });
   });
 });

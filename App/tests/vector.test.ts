@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { embed, embedText, VECTOR_SIZE } from "../lib/vector";
+import { deleteVectors, embed, embedText, VECTOR_SIZE } from "../lib/vector";
 
 describe("VECTOR_SIZE", () => {
   it("is the documented 384", () => {
@@ -146,5 +146,83 @@ describe("embed (async router)", () => {
     delete process.env.KNOWLEDGE_EMBEDDING_PROVIDER;
     const hash = await embed("anything");
     expect(hash).toHaveLength(VECTOR_SIZE);
+  });
+});
+
+describe("deleteVectors", () => {
+  const ENV_KEYS = ["QDRANT_URL", "QDRANT_API_KEY", "QDRANT_COLLECTION"] as const;
+  const original: Record<string, string | undefined> = {};
+  let originalFetch: typeof fetch;
+
+  beforeEach(() => {
+    for (const k of ENV_KEYS) original[k] = process.env[k];
+    for (const k of ENV_KEYS) delete process.env[k];
+    originalFetch = globalThis.fetch;
+  });
+  afterEach(() => {
+    for (const k of ENV_KEYS) {
+      if (original[k] === undefined) delete process.env[k];
+      else process.env[k] = original[k];
+    }
+    globalThis.fetch = originalFetch;
+  });
+
+  it("returns skipped=true when QDRANT_URL not configured", async () => {
+    const out = await deleteVectors(["a", "b"]);
+    expect(out.ok).toBe(false);
+    expect(out.skipped).toBe(true);
+    expect(out.deleted).toBe(0);
+  });
+
+  it("returns skipped=true on empty id list", async () => {
+    process.env.QDRANT_URL = "https://qdrant.test";
+    const out = await deleteVectors([]);
+    expect(out.skipped).toBe(true);
+  });
+
+  it("POSTs to Qdrant /points/delete with mapped uuid point ids", async () => {
+    process.env.QDRANT_URL = "https://qdrant.test/";
+    const fetchMock = vi.fn(async () => new Response("{}", { status: 200 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const out = await deleteVectors(["row-a", "row-b"]);
+
+    expect(out.ok).toBe(true);
+    expect(out.deleted).toBe(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toContain("/collections/perkos_research/points/delete?wait=true");
+    expect((init as RequestInit).method).toBe("POST");
+    const body = JSON.parse(String((init as RequestInit).body));
+    expect(Array.isArray(body.points)).toBe(true);
+    expect(body.points.length).toBe(2);
+    // pointId produces uuid-shaped strings (8-4-4-4-12 hex segments).
+    for (const id of body.points as string[]) {
+      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    }
+  });
+
+  it("returns ok=false with error text when Qdrant rejects", async () => {
+    process.env.QDRANT_URL = "https://qdrant.test";
+    globalThis.fetch = vi.fn(
+      async () => new Response("collection not found", { status: 404 }),
+    ) as unknown as typeof fetch;
+
+    const out = await deleteVectors(["row-a"]);
+    expect(out.ok).toBe(false);
+    expect(out.error).toContain("collection not found");
+    expect(out.deleted).toBe(0);
+  });
+
+  it("forwards api-key header when QDRANT_API_KEY set", async () => {
+    process.env.QDRANT_URL = "https://qdrant.test";
+    process.env.QDRANT_API_KEY = "secret-key";
+    const fetchMock = vi.fn(async () => new Response("{}", { status: 200 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await deleteVectors(["row-a"]);
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
+    const headers = init.headers as Record<string, string>;
+    expect(headers["api-key"]).toBe("secret-key");
   });
 });

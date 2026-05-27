@@ -46,6 +46,28 @@ export type LifecycleSweepOptions = {
   now?: Date;
 };
 
+export type VectorDeleteResult = {
+  ok: boolean;
+  deleted?: number;
+  skipped?: boolean;
+  error?: string;
+};
+
+export type LifecycleSweepDeps = {
+  /**
+   * Optional. When provided, the sweep calls this with the ids of
+   * rows that were hard-deleted from Postgres so the matching points
+   * can be removed from Qdrant. In prod this is `deleteVectors` from
+   * lib/vector.ts. Tests can omit it or pass a stub.
+   *
+   * Errors don't fail the sweep — orphan points are recoverable
+   * (re-run later, or run a one-shot janitor). Failing the sweep
+   * here would leave Postgres in the correct state but break the
+   * cron loop, which is worse.
+   */
+  deleteVectors?: (ids: string[]) => Promise<VectorDeleteResult>;
+};
+
 export type LifecycleSweepStats = {
   scanned: number;
   archived: number;
@@ -53,6 +75,10 @@ export type LifecycleSweepStats = {
   revived: number;
   unchanged: number;
   hardDeleted: number;
+  /** Points removed from Qdrant during the retention sweep (0 if no deps.deleteVectors). */
+  vectorsDeleted: number;
+  /** Best-effort error message if Qdrant cleanup failed. Orphan ids land back in the next sweep's input. */
+  vectorsError: string | null;
   durationMs: number;
   startedAt: string;
   retentionDays: number;
@@ -157,19 +183,24 @@ async function applyPlan(
  * if evicted_at is stale — because that would mean a revive happened
  * but evicted_at was not cleared (defense in depth against partial
  * writes from a previous version of this sweep).
+ *
+ * Returns the ids deleted so the caller can hand them to the Qdrant
+ * point cleanup. Uses RETURNING so we capture exactly the rows that
+ * the DELETE matched — no race with concurrent UPDATEs.
  */
 async function hardDeleteExpired(
   client: Client,
   retentionDays: number,
-): Promise<number> {
-  const res = await client.query(
+): Promise<string[]> {
+  const res = await client.query<{ id: string }>(
     `DELETE FROM research_items
       WHERE lifecycle_tier = 'evicted'
         AND evicted_at IS NOT NULL
-        AND evicted_at < NOW() - ($1 || ' days')::interval`,
+        AND evicted_at < NOW() - ($1 || ' days')::interval
+      RETURNING id`,
     [String(retentionDays)],
   );
-  return res.rowCount ?? 0;
+  return res.rows.map((r) => r.id);
 }
 
 /**
@@ -183,6 +214,7 @@ async function hardDeleteExpired(
  */
 export async function runLifecycleSweep(
   client: Client,
+  deps: LifecycleSweepDeps = {},
   opts: LifecycleSweepOptions = {},
 ): Promise<LifecycleSweepStats> {
   const retentionDays = opts.retentionDays ?? DEFAULT_RETENTION_DAYS;
@@ -200,6 +232,8 @@ export async function runLifecycleSweep(
     revived: 0,
     unchanged: 0,
     hardDeleted: 0,
+    vectorsDeleted: 0,
+    vectorsError: null,
     durationMs: 0,
     startedAt,
     retentionDays,
@@ -248,7 +282,25 @@ export async function runLifecycleSweep(
   }
 
   if (!dryRun) {
-    stats.hardDeleted = await hardDeleteExpired(client, retentionDays);
+    const deletedIds = await hardDeleteExpired(client, retentionDays);
+    stats.hardDeleted = deletedIds.length;
+
+    // Best-effort Qdrant cleanup. Failures don't fail the sweep:
+    // the orphan points won't be selected next time (they're no
+    // longer in Postgres), but a separate janitor / next-sweep run
+    // can re-attempt cleanup if `vectorsError` shows up in stats.
+    if (deletedIds.length && deps.deleteVectors) {
+      try {
+        const result = await deps.deleteVectors(deletedIds);
+        if (result.ok) {
+          stats.vectorsDeleted = result.deleted ?? deletedIds.length;
+        } else if (!result.skipped) {
+          stats.vectorsError = result.error ?? "vector_delete_failed";
+        }
+      } catch (err) {
+        stats.vectorsError = (err as Error).message;
+      }
+    }
   }
 
   stats.durationMs = Date.now() - t0;
