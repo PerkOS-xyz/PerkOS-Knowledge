@@ -57,6 +57,16 @@ export async function POST(request: Request) {
       acl.params
     );
 
+    // Touch last_used_at for retrieved rows so the lifecycle sweep
+    // (lib/lifecycleSweep.ts, Rule 3 "recently used") keeps them in
+    // the working tier instead of archiving hot items.
+    if (res.rows.length) {
+      await client.query(
+        `UPDATE research_items SET last_used_at = NOW() WHERE id = ANY($1::text[])`,
+        [res.rows.map((row) => row.id)],
+      );
+    }
+
     const coverage = {
       status: res.rows.length >= minCoverageResults ? 'sufficient' : 'insufficient',
       minResults: minCoverageResults,

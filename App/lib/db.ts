@@ -117,6 +117,10 @@ export async function ensureSchema(client: Client) {
   await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS lifecycle_tier text NOT NULL DEFAULT 'working'`);
   await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS lifecycle_evaluated_at timestamptz`);
   await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS last_used_at timestamptz`);
+  // Set ONLY when the sweep transitions a row into the "evicted" tier.
+  // The hard-delete sweep uses this as the cutoff anchor — see
+  // lib/lifecycleSweep.ts and DATA-RETENTION.md.
+  await client.query(`ALTER TABLE research_items ADD COLUMN IF NOT EXISTS evicted_at timestamptz`);
   await client.query(`
     DO $$ BEGIN
       ALTER TABLE research_items ADD CONSTRAINT research_items_lifecycle_tier_check CHECK (lifecycle_tier IN ('working', 'archived', 'evicted'));
@@ -126,6 +130,8 @@ export async function ensureSchema(client: Client) {
   // Lets the per-sweep query rapidly find candidates eligible for
   // re-evaluation, sorted oldest-touched first.
   await client.query(`CREATE INDEX IF NOT EXISTS research_items_lifecycle_idx ON research_items (lifecycle_tier, last_used_at NULLS FIRST, created_at)`);
+  // Hard-delete sweep scans evicted rows by their eviction timestamp.
+  await client.query(`CREATE INDEX IF NOT EXISTS research_items_evicted_at_idx ON research_items (evicted_at) WHERE evicted_at IS NOT NULL`);
 
   await client.query(`
     DO $$ BEGIN
