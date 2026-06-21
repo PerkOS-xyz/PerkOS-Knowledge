@@ -23,9 +23,15 @@ const COLLECTION = process.env.QDRANT_COLLECTION || 'perkos_research';
  * Qdrant collection — searches would return inconsistent results
  * depending on which encoder produced each item.
  */
-function embeddingProvider(): "hash" | "openai" {
+function embeddingProvider(): "hash" | "openai" | "gateway" {
   const p = (process.env.KNOWLEDGE_EMBEDDING_PROVIDER || 'hash').toLowerCase();
-  return p === 'openai' ? 'openai' : 'hash';
+  if (p === 'openai') return 'openai';
+  // "gateway" = any OpenAI-compatible embeddings endpoint we self-host,
+  // e.g. the PerkOS-LLM gateway (api.llm.perkos.xyz) backed by a local
+  // Ollama embedding model like all-minilm (384-dim). Keeps embeddings
+  // on PerkOS infra instead of calling OpenAI directly.
+  if (p === 'gateway' || p === 'ollama') return 'gateway';
+  return 'hash';
 }
 
 export type VectorItem = {
@@ -98,8 +104,58 @@ export function embedText(text: string) {
  * The returned vector is ALWAYS VECTOR_SIZE (384) regardless of
  * provider — the Qdrant collection contract doesn't move.
  */
+/**
+ * Embed via a self-hosted OpenAI-compatible endpoint (the PerkOS-LLM
+ * gateway, backed by a local Ollama embedding model). No `dimensions`
+ * param is sent — the model (e.g. all-minilm) is natively VECTOR_SIZE,
+ * and Ollama's OpenAI-compat endpoint doesn't honor truncation anyway.
+ * Auth is optional: the gateway gates by nginx IP allowlist, so the
+ * Bearer key is only needed for usage attribution.
+ */
+async function embedViaGateway(text: string): Promise<number[]> {
+  const url = process.env.KNOWLEDGE_EMBEDDING_BASE_URL || '';
+  if (!url) {
+    throw new Error(
+      'KNOWLEDGE_EMBEDDING_PROVIDER=gateway but KNOWLEDGE_EMBEDDING_BASE_URL is unset. ' +
+      'Point it at an OpenAI-compatible /v1/embeddings endpoint.',
+    );
+  }
+  const model = process.env.KNOWLEDGE_EMBEDDING_MODEL || 'all-minilm';
+  const apiKey = process.env.KNOWLEDGE_EMBEDDING_API_KEY || '';
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (apiKey) headers['authorization'] = `Bearer ${apiKey}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      signal: controller.signal,
+      body: JSON.stringify({ model, input: text, encoding_format: 'float' }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`embedViaGateway: HTTP ${res.status} — ${body.slice(0, 200)}`);
+    }
+    const data = (await res.json()) as { data?: Array<{ embedding?: number[] }> };
+    const vector = data.data?.[0]?.embedding;
+    if (!Array.isArray(vector) || vector.length !== VECTOR_SIZE) {
+      throw new Error(
+        `embedViaGateway: missing/wrong-shape embedding (got len=${
+          Array.isArray(vector) ? vector.length : 'n/a'
+        }, expected ${VECTOR_SIZE})`,
+      );
+    }
+    return vector;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function embed(text: string): Promise<number[]> {
-  if (embeddingProvider() === 'openai') {
+  const provider = embeddingProvider();
+  if (provider === 'openai') {
     const apiKey = process.env.OPENAI_API_KEY || '';
     if (!apiKey) {
       throw new Error(
@@ -113,6 +169,9 @@ export async function embed(text: string): Promise<number[]> {
       dimensions: VECTOR_SIZE,
     });
     return out.vector;
+  }
+  if (provider === 'gateway') {
+    return embedViaGateway(text);
   }
   return embedText(text);
 }

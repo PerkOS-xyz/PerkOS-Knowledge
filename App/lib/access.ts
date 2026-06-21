@@ -177,7 +177,7 @@ export async function recordUsage(client: Client, event: {
   }
 }
 
-export function visibilityCounts(rows: Array<{ visibility?: string }>) {
+export function visibilityCounts(rows: Array<{ visibility?: string | null }>) {
   return rows.reduce<Record<string, number>>((acc, row) => {
     const key = row.visibility || 'unknown';
     acc[key] = (acc[key] || 0) + 1;

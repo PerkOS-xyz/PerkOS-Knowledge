@@ -1,5 +1,6 @@
-import { getAccessContext, readableKnowledgeWhere, recordUsage, requestId, sanitizeKnowledgeRow, visibilityCounts } from '../../../lib/access';
+import { getAccessContext, recordUsage, requestId, sanitizeKnowledgeRow, visibilityCounts } from '../../../lib/access';
 import { withDb } from '../../../lib/db';
+import { hybridSearch } from '../../../lib/hybrid';
 import { cleanDesiredOutput, cleanPriority, cleanStringArray, createKnowledgeRequest, publicKnowledgeRequest } from '../../../lib/requests';
 import { getX402Policy, inspectX402Request, isX402Satisfied, publicX402, resolveX402Tier, storeX402Receipt, verifyX402WithFacilitator } from '../../../lib/x402';
 
@@ -14,7 +15,17 @@ export async function POST(request: Request) {
   const mode = String(body.mode || 'context');
   const minCoverageResults = Math.max(1, Math.min(Number(body.minCoverageResults || body.min_coverage_results || 1), 10));
   const createRequestOnMiss = body.createRequestOnMiss !== false && body.create_request_on_miss !== false;
-  const qualityMode = String(body.qualityMode || body.quality_mode || 'enterprise');
+  // Default to "standard" (rank-by-quality, no hard floor) rather than
+  // "enterprise" (confidence >= 45). The quality rubric (lib/quality.ts)
+  // only awards >=45 to items with attached evidence + validation, so an
+  // enterprise default returns NOTHING for an unvalidated research corpus —
+  // callers see an empty knowledge base. Standard returns the best-ranked
+  // matches with the honest `quality.warning` + per-item confidence/trust
+  // signals; callers that need a guarantee opt in with qualityMode
+  // "enterprise" or "validated_only". Override via KNOWLEDGE_DEFAULT_QUALITY_MODE.
+  const qualityMode = String(
+    body.qualityMode || body.quality_mode || process.env.KNOWLEDGE_DEFAULT_QUALITY_MODE || 'standard',
+  );
   const requireValidated = body.requireValidated === true || body.require_validated === true || qualityMode === 'validated_only';
   const minConfidence = Math.max(0, Math.min(Number(body.minConfidence ?? body.min_confidence ?? (qualityMode === 'enterprise' ? 45 : 0)), 100));
 
@@ -31,50 +42,39 @@ export async function POST(request: Request) {
     if (!isX402Satisfied(policy, x402)) {
       return { paymentRequired: true as const, policy, x402, rows: [] };
     }
-    const params: unknown[] = [query];
-    const acl = readableKnowledgeWhere(access, params);
-    const qualityClauses: string[] = [];
-    if (requireValidated) qualityClauses.push(`validation_status = 'validated'`);
-    if (minConfidence > 0) {
-      acl.params.push(minConfidence);
-      qualityClauses.push(`coalesce(confidence_percent, quality_score, 0) >= $${acl.params.length}`);
-    }
-    acl.params.push(limit);
-    const qualitySql = qualityClauses.length ? `AND ${qualityClauses.join(' AND ')}` : '';
-
     const receiptId = await storeX402Receipt(client, { x402, policy, access, endpoint: '/skill/query' });
 
-    const res = await client.query(
-      `SELECT id, title, summary, track, chains, path, visibility, organization_id,
-              validation_status, sanitization_status, quality_score, confidence_percent, trust_tier, quality_reasons,
-              usage_count, updated_at
-       FROM research_items
-       WHERE to_tsvector('english', coalesce(title,'') || ' ' || coalesce(summary,'') || ' ' || coalesce(track,'') || ' ' || coalesce(path,'')) @@ plainto_tsquery('english', $1)
-         AND ${acl.sql}
-         ${qualitySql}
-       ORDER BY (validation_status = 'validated') DESC, coalesce(confidence_percent, quality_score, 0) DESC, usage_count DESC, updated_at DESC
-       LIMIT $${acl.params.length}`,
-      acl.params
-    );
+    // Hybrid retrieval: lexical (BM25/Postgres FTS) + semantic (Qdrant
+    // vector) recall merged with Reciprocal Rank Fusion. ACL + quality are
+    // re-enforced authoritatively in Postgres when the fused union is
+    // hydrated, so the vector leg can only ADD recall, never widen access.
+    // Degrades to BM25-only when Qdrant / OpenAI embeddings aren't configured.
+    const { rows, vectorUsed } = await hybridSearch(client, {
+      query,
+      access,
+      limit,
+      requireValidated,
+      minConfidence,
+    });
 
     // Touch last_used_at for retrieved rows so the lifecycle sweep
     // (lib/lifecycleSweep.ts, Rule 3 "recently used") keeps them in
     // the working tier instead of archiving hot items.
-    if (res.rows.length) {
+    if (rows.length) {
       await client.query(
         `UPDATE research_items SET last_used_at = NOW() WHERE id = ANY($1::text[])`,
-        [res.rows.map((row) => row.id)],
+        [rows.map((row) => row.id)],
       );
     }
 
     const coverage = {
-      status: res.rows.length >= minCoverageResults ? 'sufficient' : 'insufficient',
+      status: rows.length >= minCoverageResults ? 'sufficient' : 'insufficient',
       minResults: minCoverageResults,
-      resultCount: res.rows.length,
+      resultCount: rows.length,
       requestCreated: false,
     };
 
-    const knowledgeRequest = createRequestOnMiss && res.rows.length < minCoverageResults
+    const knowledgeRequest = createRequestOnMiss && rows.length < minCoverageResults
       ? await createKnowledgeRequest(client, {
           query,
           requester: access,
@@ -93,17 +93,17 @@ export async function POST(request: Request) {
       access,
       endpoint: '/skill/query',
       query,
-      retrievedItemIds: res.rows.map((row) => row.id),
-      visibilityCounts: visibilityCounts(res.rows),
+      retrievedItemIds: rows.map((row) => row.id),
+      visibilityCounts: visibilityCounts(rows),
       latencyMs: Date.now() - started,
       x402ReceiptId: receiptId,
       amountPaid: receiptId ? Number(policy.price.amount || 0) : 0,
       paymentChain: policy.price.chain,
       paymentToken: policy.price.token,
-      successStatus: res.rows.length < minCoverageResults ? 'coverage_insufficient' : 'ok',
+      successStatus: rows.length < minCoverageResults ? 'coverage_insufficient' : 'ok',
     });
 
-    return { paymentRequired: false as const, policy, x402, rows: res.rows, coverage: { ...coverage, requestCreated: Boolean(knowledgeRequest?.created) }, knowledgeRequest };
+    return { paymentRequired: false as const, policy, x402, rows, vectorUsed, coverage: { ...coverage, requestCreated: Boolean(knowledgeRequest?.created) }, knowledgeRequest };
   });
 
   if (result.paymentRequired) {
@@ -116,6 +116,7 @@ export async function POST(request: Request) {
     mode,
     query,
     count: result.rows.length,
+    retrieval: { mode: result.vectorUsed ? 'hybrid' : 'bm25', vectorLeg: result.vectorUsed },
     coverage: result.coverage,
     quality: {
       mode: qualityMode,

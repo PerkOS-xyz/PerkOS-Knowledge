@@ -149,6 +149,92 @@ describe("embed (async router)", () => {
   });
 });
 
+describe("embed (gateway provider — self-hosted OpenAI-compatible)", () => {
+  const ENV_KEYS = [
+    "KNOWLEDGE_EMBEDDING_PROVIDER",
+    "KNOWLEDGE_EMBEDDING_BASE_URL",
+    "KNOWLEDGE_EMBEDDING_MODEL",
+    "KNOWLEDGE_EMBEDDING_API_KEY",
+  ] as const;
+  const original: Record<string, string | undefined> = {};
+  let originalFetch: typeof fetch;
+
+  beforeEach(() => {
+    for (const k of ENV_KEYS) original[k] = process.env[k];
+    for (const k of ENV_KEYS) delete process.env[k];
+    originalFetch = globalThis.fetch;
+  });
+  afterEach(() => {
+    for (const k of ENV_KEYS) {
+      if (original[k] === undefined) delete process.env[k];
+      else process.env[k] = original[k];
+    }
+    globalThis.fetch = originalFetch;
+  });
+
+  it("provider=gateway + no base URL → throws (fail-loud)", async () => {
+    process.env.KNOWLEDGE_EMBEDDING_PROVIDER = "gateway";
+    await expect(embed("test")).rejects.toThrow(/KNOWLEDGE_EMBEDDING_BASE_URL is unset/);
+  });
+
+  it("provider=gateway → POSTs OpenAI-compat body (no dimensions) + returns the vector", async () => {
+    process.env.KNOWLEDGE_EMBEDDING_PROVIDER = "gateway";
+    process.env.KNOWLEDGE_EMBEDDING_BASE_URL = "https://api.llm.perkos.xyz/v1/embeddings";
+    process.env.KNOWLEDGE_EMBEDDING_MODEL = "all-minilm";
+    const apiVector = Array.from({ length: 384 }, (_, i) => (i % 5) / 5);
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ model: "all-minilm", data: [{ embedding: apiVector }] }),
+          { status: 200 },
+        ),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const out = await embed("erc8004 identity");
+    expect(out).toEqual(apiVector);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toBe("https://api.llm.perkos.xyz/v1/embeddings");
+    const body = JSON.parse(String((init as RequestInit).body));
+    expect(body.model).toBe("all-minilm");
+    expect(body.input).toBe("erc8004 identity");
+    expect(body.dimensions).toBeUndefined(); // gateway model is natively 384
+  });
+
+  it("provider=gateway + API key set → sends Authorization header", async () => {
+    process.env.KNOWLEDGE_EMBEDDING_PROVIDER = "gateway";
+    process.env.KNOWLEDGE_EMBEDDING_BASE_URL = "https://api.llm.perkos.xyz/v1/embeddings";
+    process.env.KNOWLEDGE_EMBEDDING_API_KEY = "agent-key-123";
+    const apiVector = Array.from({ length: 384 }, () => 0.1);
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ data: [{ embedding: apiVector }] }), { status: 200 }),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await embed("x");
+    const headers = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
+    expect(headers["authorization"]).toBe("Bearer agent-key-123");
+  });
+
+  it("provider=gateway + wrong-dimension response → throws", async () => {
+    process.env.KNOWLEDGE_EMBEDDING_PROVIDER = "gateway";
+    process.env.KNOWLEDGE_EMBEDDING_BASE_URL = "https://api.llm.perkos.xyz/v1/embeddings";
+    globalThis.fetch = vi.fn(
+      async () => new Response(JSON.stringify({ data: [{ embedding: [1, 2, 3] }] }), { status: 200 }),
+    ) as unknown as typeof fetch;
+    await expect(embed("x")).rejects.toThrow(/wrong-shape|len=3/);
+  });
+
+  it("provider=gateway + upstream 502 → propagates the error", async () => {
+    process.env.KNOWLEDGE_EMBEDDING_PROVIDER = "gateway";
+    process.env.KNOWLEDGE_EMBEDDING_BASE_URL = "https://api.llm.perkos.xyz/v1/embeddings";
+    globalThis.fetch = vi.fn(
+      async () => new Response("upstream_failed", { status: 502 }),
+    ) as unknown as typeof fetch;
+    await expect(embed("x")).rejects.toThrow(/HTTP 502/);
+  });
+});
+
 describe("deleteVectors", () => {
   const ENV_KEYS = ["QDRANT_URL", "QDRANT_API_KEY", "QDRANT_COLLECTION"] as const;
   const original: Record<string, string | undefined> = {};
