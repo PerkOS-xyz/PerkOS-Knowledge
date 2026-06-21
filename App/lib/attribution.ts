@@ -45,10 +45,17 @@ const ATTRIBUTION_COLS =
   "(request_id, research_item_id, provider_agent_id, provider_wallet, organization_id, " +
   "consumer_agent_id, consumer_wallet, endpoint, amount, chain, token, x402_receipt_id)";
 
+export type AttributionResult = {
+  count: number;
+  /** Per provider-wallet credited totals (only when the share is > 0). */
+  creditedByWallet: Array<{ wallet: string; agentId: string | null; amount: number }>;
+};
+
 /**
  * Credit the contributors of the consumed items for one query. The amount is
  * split equally across ALL consumed ids, but only items with a contributor
- * (agent or wallet) get a ledger row. Returns the number of rows written.
+ * (agent or wallet) get a ledger row. Returns the row count + the per-wallet
+ * credited totals so the caller can move each provider's balance once.
  *
  * Best-effort by contract — the caller wraps this so an attribution failure
  * never breaks serving the query. Idempotent per query: each query has a
@@ -57,9 +64,9 @@ const ATTRIBUTION_COLS =
 export async function recordAttributions(
   client: Client,
   input: AttributionInput,
-): Promise<number> {
+): Promise<AttributionResult> {
   const ids = input.retrievedItemIds.filter(Boolean);
-  if (!ids.length) return 0;
+  if (!ids.length) return { count: 0, creditedByWallet: [] };
   const share = splitAmount(input.amountPaid, ids.length);
 
   const res = await client.query(
@@ -70,7 +77,7 @@ export async function recordAttributions(
   const credited = res.rows.filter(
     (r) => r.contributor_agent_id || r.contributor_wallet,
   );
-  if (!credited.length) return 0;
+  if (!credited.length) return { count: 0, creditedByWallet: [] };
 
   const values: unknown[] = [];
   const tuples: string[] = [];
@@ -98,8 +105,29 @@ export async function recordAttributions(
     `INSERT INTO knowledge_attributions ${ATTRIBUTION_COLS} VALUES ${tuples.join(",")}`,
     values,
   );
-  return credited.length;
+
+  // Aggregate per provider wallet so the caller credits each balance once, and
+  // only when there's a real amount to move (share is 0 in metered_free mode).
+  const byWallet = new Map<string, { agentId: string | null; amount: number }>();
+  if (share > 0) {
+    for (const r of credited) {
+      const w = String(r.contributor_wallet || "").toLowerCase();
+      if (!w) continue;
+      const cur = byWallet.get(w) ?? { agentId: r.contributor_agent_id ?? null, amount: 0 };
+      cur.amount += share;
+      byWallet.set(w, cur);
+    }
+  }
+  return {
+    count: credited.length,
+    creditedByWallet: [...byWallet.entries()].map(([wallet, v]) => ({
+      wallet,
+      agentId: v.agentId,
+      amount: v.amount,
+    })),
+  };
 }
+
 
 export type ProviderEarnings = {
   wallet: string;

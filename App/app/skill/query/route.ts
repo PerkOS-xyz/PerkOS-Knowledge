@@ -2,6 +2,7 @@ import { getAccessContext, recordUsage, requestId, sanitizeKnowledgeRow, visibil
 import { withDb } from '../../../lib/db';
 import { hybridSearch } from '../../../lib/hybrid';
 import { recordAttributions } from '../../../lib/attribution';
+import { credit, debit, isExempt } from '../../../lib/credits';
 import { cleanDesiredOutput, cleanPriority, cleanStringArray, createKnowledgeRequest, publicKnowledgeRequest } from '../../../lib/requests';
 import { getX402Policy, inspectX402Request, isX402Satisfied, publicX402, resolveX402Tier, storeX402Receipt, verifyX402WithFacilitator } from '../../../lib/x402';
 
@@ -43,6 +44,24 @@ export async function POST(request: Request) {
     if (!isX402Satisfied(policy, x402)) {
       return { paymentRequired: true as const, policy, x402, rows: [] };
     }
+
+    // Credit-mode billing: debit the consumer's prepaid balance before doing any
+    // work, unless the agent/wallet is whitelisted (exempt). `chargedAmount` is
+    // what actually entered our ledger and is what gets split to providers.
+    // metered_free / enforce modes skip this entirely (chargedAmount stays 0).
+    let chargedAmount = 0;
+    const price = Number(policy.price.amount || 0);
+    if (policy.mode === 'credit' && price > 0 && !(await isExempt(client, access.agentId, access.wallet))) {
+      if (!access.wallet) {
+        return { paymentRequired: true as const, policy, x402, rows: [], creditError: 'wallet_required' as const };
+      }
+      const charged = await debit(client, { wallet: access.wallet, agentId: access.agentId, amount: price, reason: 'query', requestId: id });
+      if (!charged.ok) {
+        return { paymentRequired: true as const, policy, x402, rows: [], creditError: 'insufficient_credit' as const, balance: charged.balance, price };
+      }
+      chargedAmount = price;
+    }
+
     const receiptId = await storeX402Receipt(client, { x402, policy, access, endpoint: '/skill/query' });
 
     // Hybrid retrieval: lexical (BM25/Postgres FTS) + semantic (Qdrant
@@ -98,7 +117,7 @@ export async function POST(request: Request) {
       visibilityCounts: visibilityCounts(rows),
       latencyMs: Date.now() - started,
       x402ReceiptId: receiptId,
-      amountPaid: receiptId ? Number(policy.price.amount || 0) : 0,
+      amountPaid: chargedAmount,
       paymentChain: policy.price.chain,
       paymentToken: policy.price.token,
       successStatus: rows.length < minCoverageResults ? 'coverage_insufficient' : 'ok',
@@ -107,24 +126,47 @@ export async function POST(request: Request) {
     // Supply-side: credit the contributors of the consumed items. Best-effort —
     // an attribution-ledger write must never break serving the consumer's query.
     try {
-      await recordAttributions(client, {
+      const attr = await recordAttributions(client, {
         requestId: id,
         endpoint: '/skill/query',
         access,
         retrievedItemIds: rows.map((row) => row.id),
-        amountPaid: receiptId ? Number(policy.price.amount || 0) : 0,
+        amountPaid: chargedAmount,
         chain: policy.price.chain,
         token: policy.price.token,
         x402ReceiptId: receiptId,
       });
+      // Move the split amount into each provider's prepaid balance (earnings).
+      for (const c of attr.creditedByWallet) {
+        await credit(client, {
+          wallet: c.wallet,
+          agentId: c.agentId,
+          amount: c.amount,
+          reason: 'attribution',
+          requestId: id,
+          earned: true,
+        });
+      }
     } catch {
-      // attribution is secondary to the response — swallow and move on
+      // attribution/credit is secondary to the response — swallow and move on
     }
 
     return { paymentRequired: false as const, policy, x402, rows, vectorUsed, coverage: { ...coverage, requestCreated: Boolean(knowledgeRequest?.created) }, knowledgeRequest };
   });
 
   if (result.paymentRequired) {
+    if ('creditError' in result && result.creditError) {
+      return Response.json(
+        {
+          ok: false,
+          error: result.creditError,
+          balance: 'balance' in result ? result.balance : null,
+          price: 'price' in result ? result.price : null,
+          currency: result.policy.price.currency,
+        },
+        { status: 402 },
+      );
+    }
     return Response.json({ ok: false, error: 'payment_required', x402: publicX402(result.policy, result.x402) }, { status: 402 });
   }
 

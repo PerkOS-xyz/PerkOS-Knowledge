@@ -277,6 +277,55 @@ export async function ensureSchema(client: Client) {
   await client.query(`CREATE INDEX IF NOT EXISTS knowledge_attributions_item_idx ON knowledge_attributions (research_item_id)`);
   await client.query(`CREATE INDEX IF NOT EXISTS knowledge_attributions_unsettled_idx ON knowledge_attributions (created_at) WHERE settled = false`);
 
+  // --- Credit / billing system (the two-sided market money layer) ----------
+  // Prepaid credit balance per OWNER wallet — the money lives at the wallet.
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS agent_accounts (
+      wallet text PRIMARY KEY,
+      balance numeric NOT NULL DEFAULT 0,
+      currency text NOT NULL DEFAULT 'USDC',
+      total_earned numeric NOT NULL DEFAULT 0,
+      total_spent numeric NOT NULL DEFAULT 0,
+      total_deposited numeric NOT NULL DEFAULT 0,
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  // Per-agent billing config = the whitelist. exempt agents query for free;
+  // role marks providers (earn) vs consumers. PerkOS internal / research
+  // agents are exempt:true, role 'provider' or 'both'.
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS agent_billing (
+      agent_id text PRIMARY KEY,
+      wallet text,
+      exempt boolean NOT NULL DEFAULT false,
+      role text NOT NULL DEFAULT 'consumer',
+      note text,
+      updated_by text,
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  // Unified credit movements — the audit trail behind every balance change.
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS credit_ledger (
+      id bigserial PRIMARY KEY,
+      wallet text NOT NULL,
+      agent_id text,
+      kind text NOT NULL,
+      amount numeric NOT NULL,
+      reason text NOT NULL,
+      request_id text,
+      x402_receipt_id text,
+      balance_after numeric,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  await client.query(`CREATE INDEX IF NOT EXISTS credit_ledger_wallet_idx ON credit_ledger (lower(wallet), created_at DESC)`);
+  await client.query(`CREATE INDEX IF NOT EXISTS credit_ledger_agent_idx ON credit_ledger (agent_id, created_at DESC)`);
+  await client.query(`CREATE INDEX IF NOT EXISTS agent_billing_wallet_idx ON agent_billing (lower(wallet))`);
+
+
   await client.query(`CREATE INDEX IF NOT EXISTS research_items_agents_idx ON research_items USING gin (agents)`);
   await client.query(`CREATE INDEX IF NOT EXISTS research_items_chains_idx ON research_items USING gin (chains)`);
   await client.query(`CREATE INDEX IF NOT EXISTS research_items_visibility_org_idx ON research_items (visibility, organization_id)`);

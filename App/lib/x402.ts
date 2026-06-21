@@ -5,7 +5,7 @@ import type { AccessContext } from './access';
 export type X402Tier = 'public' | 'private' | 'premium';
 
 export type X402Policy = {
-  mode: 'metered_free' | 'enforce';
+  mode: 'metered_free' | 'enforce' | 'credit';
   endpoint: string;
   tier: X402Tier;
   description: string;
@@ -72,7 +72,10 @@ export function resolveX402Tier(input?: { requestedTier?: string; hasOrganizatio
 }
 
 export function getX402Policy(endpoint = '/skill/query', tier: X402Tier = 'public'): X402Policy {
-  const mode = env('KNOWLEDGE_X402_MODE', 'metered_free') === 'enforce' ? 'enforce' : 'metered_free';
+  // 'credit' = prepaid balance debit (off-chain), the PerkOS billing model.
+  // 'enforce' = per-request on-chain x402 receipt (facilitator path).
+  const rawMode = env('KNOWLEDGE_X402_MODE', 'metered_free');
+  const mode = rawMode === 'enforce' ? 'enforce' : rawMode === 'credit' ? 'credit' : 'metered_free';
   const amount = tierAmount(tier);
   const currency = env('KNOWLEDGE_X402_CURRENCY', 'USDC');
   const chain = env('KNOWLEDGE_X402_CHAIN', 'base');
