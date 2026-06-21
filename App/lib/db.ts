@@ -325,6 +325,26 @@ export async function ensureSchema(client: Client) {
   await client.query(`CREATE INDEX IF NOT EXISTS credit_ledger_agent_idx ON credit_ledger (agent_id, created_at DESC)`);
   await client.query(`CREATE INDEX IF NOT EXISTS agent_billing_wallet_idx ON agent_billing (lower(wallet))`);
 
+  // Provider payouts (F4 settlement) — on-chain USDC transfers treasury->provider.
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS settlements (
+      id text PRIMARY KEY,
+      provider_wallet text NOT NULL,
+      amount numeric NOT NULL,
+      currency text NOT NULL DEFAULT 'USDC',
+      chain text,
+      token text,
+      treasury text,
+      tx_hash text,
+      status text NOT NULL DEFAULT 'pending',
+      error text,
+      requested_by text,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      settled_at timestamptz
+    )
+  `);
+  await client.query(`CREATE INDEX IF NOT EXISTS settlements_provider_idx ON settlements (lower(provider_wallet), created_at DESC)`);
+
 
   await client.query(`CREATE INDEX IF NOT EXISTS research_items_agents_idx ON research_items USING gin (agents)`);
   await client.query(`CREATE INDEX IF NOT EXISTS research_items_chains_idx ON research_items USING gin (chains)`);
