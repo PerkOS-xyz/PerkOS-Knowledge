@@ -250,6 +250,33 @@ export async function ensureSchema(client: Client) {
     )
   `);
 
+  // Provider attribution / earnings ledger — credits an item's contributor
+  // when their item is consumed by a (paid) query. See lib/attribution.ts.
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS knowledge_attributions (
+      id bigserial PRIMARY KEY,
+      request_id text NOT NULL,
+      research_item_id text REFERENCES research_items(id) ON DELETE SET NULL,
+      provider_agent_id text REFERENCES agents(id) ON DELETE SET NULL,
+      provider_wallet text,
+      organization_id text REFERENCES organizations(id) ON DELETE SET NULL,
+      consumer_agent_id text REFERENCES agents(id) ON DELETE SET NULL,
+      consumer_wallet text,
+      endpoint text NOT NULL,
+      amount numeric NOT NULL DEFAULT 0,
+      chain text,
+      token text,
+      x402_receipt_id text,
+      settled boolean NOT NULL DEFAULT false,
+      settled_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  await client.query(`CREATE INDEX IF NOT EXISTS knowledge_attributions_provider_wallet_idx ON knowledge_attributions (lower(provider_wallet), created_at DESC)`);
+  await client.query(`CREATE INDEX IF NOT EXISTS knowledge_attributions_provider_agent_idx ON knowledge_attributions (provider_agent_id, created_at DESC)`);
+  await client.query(`CREATE INDEX IF NOT EXISTS knowledge_attributions_item_idx ON knowledge_attributions (research_item_id)`);
+  await client.query(`CREATE INDEX IF NOT EXISTS knowledge_attributions_unsettled_idx ON knowledge_attributions (created_at) WHERE settled = false`);
+
   await client.query(`CREATE INDEX IF NOT EXISTS research_items_agents_idx ON research_items USING gin (agents)`);
   await client.query(`CREATE INDEX IF NOT EXISTS research_items_chains_idx ON research_items USING gin (chains)`);
   await client.query(`CREATE INDEX IF NOT EXISTS research_items_visibility_org_idx ON research_items (visibility, organization_id)`);

@@ -1,6 +1,7 @@
 import { getAccessContext, recordUsage, requestId, sanitizeKnowledgeRow, visibilityCounts } from '../../../lib/access';
 import { withDb } from '../../../lib/db';
 import { hybridSearch } from '../../../lib/hybrid';
+import { recordAttributions } from '../../../lib/attribution';
 import { cleanDesiredOutput, cleanPriority, cleanStringArray, createKnowledgeRequest, publicKnowledgeRequest } from '../../../lib/requests';
 import { getX402Policy, inspectX402Request, isX402Satisfied, publicX402, resolveX402Tier, storeX402Receipt, verifyX402WithFacilitator } from '../../../lib/x402';
 
@@ -102,6 +103,23 @@ export async function POST(request: Request) {
       paymentToken: policy.price.token,
       successStatus: rows.length < minCoverageResults ? 'coverage_insufficient' : 'ok',
     });
+
+    // Supply-side: credit the contributors of the consumed items. Best-effort —
+    // an attribution-ledger write must never break serving the consumer's query.
+    try {
+      await recordAttributions(client, {
+        requestId: id,
+        endpoint: '/skill/query',
+        access,
+        retrievedItemIds: rows.map((row) => row.id),
+        amountPaid: receiptId ? Number(policy.price.amount || 0) : 0,
+        chain: policy.price.chain,
+        token: policy.price.token,
+        x402ReceiptId: receiptId,
+      });
+    } catch {
+      // attribution is secondary to the response — swallow and move on
+    }
 
     return { paymentRequired: false as const, policy, x402, rows, vectorUsed, coverage: { ...coverage, requestCreated: Boolean(knowledgeRequest?.created) }, knowledgeRequest };
   });
