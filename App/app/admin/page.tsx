@@ -40,7 +40,7 @@ export default async function AdminDashboard() {
       <main className="dashShell">
         <nav className="dashNav">
           <a href="/" className="brand"><span className="orb" /> PerkOS Knowledge</a>
-          <div className="dashLinks"><a href="/dashboard">User</a><a href="/api/stats">Stats API</a></div>
+          <div className="dashLinks"><a href="/admin/billing">Billing</a><a href="/dashboard">User</a><a href="/api/stats">Stats API</a></div>
         </nav>
 
         <section className="dashHero">
