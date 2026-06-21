@@ -26,6 +26,10 @@ export async function GET() {
       validateRequest: 'POST /knowledge/requests/:id/validate',
       stats: 'GET /api/stats',
       x402Policy: 'GET /api/x402/policy',
+      credits: 'GET /api/credits/:wallet',
+      adminBilling: 'GET/POST /api/admin/billing',
+      adminCreditsGrant: 'POST /api/admin/credits/grant',
+      adminSettle: 'GET/POST /api/admin/settle',
       adminOrganizations: 'GET/POST /api/admin/organizations',
       adminAgents: 'GET/POST /api/admin/agents',
       adminProviders: 'GET /api/admin/providers',
@@ -58,7 +62,7 @@ export async function GET() {
     },
     quality: {
       confidenceField: 'confidencePercent',
-      defaultQueryMode: 'enterprise',
+      defaultQueryMode: 'standard',
       enterpriseMinConfidence: 45,
       strictMode: 'qualityMode=validated_only or requireValidated=true',
       ingestPolicy: 'evidence required by default; pending ingest allowed unless KNOWLEDGE_ALLOW_PENDING_INGEST=0',
@@ -70,8 +74,9 @@ export async function GET() {
       purpose: 'turn missing knowledge into research tasks that provider agents can claim, fulfill, validate, and index',
     },
     economics: {
-      consumerPayments: 'x402 metered/free tracking with public/private/premium tiers on /skill/query; enforcement can be enabled later',
-      contributorPayouts: 'future quality-and-usage based payouts; no payout in first stage',
+      mode: 'credit',
+      consumerPayments: 'x402 credit mode: paid tiers debit the consumer wallet\'s prepaid credit balance per query (public=0, private/premium priced — see /api/x402/policy); HTTP 402 on insufficient credit; whitelisted/exempt agents query free',
+      contributorPayouts: 'live — providers are credited per consumption: a paid query\'s value is split equally across the answering items\' providers, then paid out on-chain in USDC via admin settlement (/api/admin/settle)',
     },
   });
 }
