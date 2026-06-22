@@ -345,6 +345,62 @@ export async function ensureSchema(client: Client) {
   `);
   await client.query(`CREATE INDEX IF NOT EXISTS settlements_provider_idx ON settlements (lower(provider_wallet), created_at DESC)`);
 
+  // Tokenomics — admin-editable economics (prices, fee waterfall, reward split,
+  // buyback). Single row ('default'); unset columns fall back to env defaults
+  // in lib/tokenomics.ts. Editing this in the admin UI tunes pricing without a
+  // redeploy. bps = basis points (10000 = 100%).
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS tokenomics_config (
+      id text PRIMARY KEY DEFAULT 'default',
+      mode text,
+      price_public numeric,
+      price_private numeric,
+      price_premium numeric,
+      price_enterprise numeric,
+      fee_provider_bps integer,
+      fee_platform_bps integer,
+      fee_reward_bps integer,
+      reward_researcher_bps integer,
+      buyback_enabled boolean,
+      buyback_threshold numeric,
+      updated_by text,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+
+  // Recognized platform fee per paid query (the 20% take) — PerkOS revenue.
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS platform_revenue (
+      id bigserial PRIMARY KEY,
+      request_id text,
+      tier text,
+      amount numeric NOT NULL,
+      currency text NOT NULL DEFAULT 'USDC',
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  await client.query(`CREATE INDEX IF NOT EXISTS platform_revenue_created_idx ON platform_revenue (created_at DESC)`);
+
+  // Accrued $PERKOS reward budget per paid query (the 5%). The buyback worker
+  // (off until KMS key + legal) batches pending rows into a DEX buy, then
+  // distributes the bought $PERKOS to the requester + researchers per the
+  // recorded shares. Holds USDC-denominated amounts until then.
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS reward_pool (
+      id bigserial PRIMARY KEY,
+      request_id text,
+      amount numeric NOT NULL,
+      currency text NOT NULL DEFAULT 'USDC',
+      requester_wallet text,
+      researcher_wallets jsonb NOT NULL DEFAULT '[]',
+      researcher_bps integer,
+      epoch text,
+      status text NOT NULL DEFAULT 'pending',
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  await client.query(`CREATE INDEX IF NOT EXISTS reward_pool_status_idx ON reward_pool (status, created_at)`);
+
 
   await client.query(`CREATE INDEX IF NOT EXISTS research_items_agents_idx ON research_items USING gin (agents)`);
   await client.query(`CREATE INDEX IF NOT EXISTS research_items_chains_idx ON research_items USING gin (chains)`);

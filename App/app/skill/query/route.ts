@@ -3,6 +3,7 @@ import { withDb } from '../../../lib/db';
 import { hybridSearch } from '../../../lib/hybrid';
 import { recordAttributions } from '../../../lib/attribution';
 import { credit, debit, isExempt } from '../../../lib/credits';
+import { accrueReward, feeWaterfall, loadTokenomics, priceForTier, recordPlatformRevenue } from '../../../lib/tokenomics';
 import { cleanDesiredOutput, cleanPriority, cleanStringArray, createKnowledgeRequest, publicKnowledgeRequest } from '../../../lib/requests';
 import { getX402Policy, inspectX402Request, isX402Satisfied, publicX402, resolveX402Tier, storeX402Receipt, verifyX402WithFacilitator } from '../../../lib/x402';
 
@@ -35,9 +36,12 @@ export async function POST(request: Request) {
 
   const result = await withDb(async (client) => {
     const access = await getAccessContext(client, request);
+    const cfg = await loadTokenomics(client);
     const requestedOrg = Boolean(request.headers.get('x-organization-id') || request.headers.get('x-org-id'));
-    const tier = resolveX402Tier({ requestedTier: body.tier || body.scope, hasOrganizationScope: requestedOrg || access.organizationIds.length > 0, mode });
-    const policy = getX402Policy('/skill/query', tier);
+    // Validated-only queries buy the top (enterprise) tier — guaranteed quality.
+    const tier = resolveX402Tier({ requestedTier: body.tier || body.scope, hasOrganizationScope: requestedOrg || access.organizationIds.length > 0, mode, validated: requireValidated });
+    const policy = getX402Policy('/skill/query', tier, priceForTier(cfg, tier));
+    policy.mode = cfg.mode;
     const inspected = inspectX402Request(request, policy);
     const x402 = await verifyX402WithFacilitator(inspected, policy);
 
@@ -123,6 +127,11 @@ export async function POST(request: Request) {
       successStatus: rows.length < minCoverageResults ? 'coverage_insufficient' : 'ok',
     });
 
+    // Fee waterfall: the charged amount splits into the provider payout (their
+    // earnings), the platform take (PerkOS revenue), and the $PERKOS reward pool.
+    // chargedAmount = 0 (free / exempt / metered_free) → all zero, nothing moves.
+    const split = feeWaterfall(chargedAmount, cfg);
+
     // Supply-side: credit the contributors of the consumed items. Best-effort —
     // an attribution-ledger write must never break serving the consumer's query.
     try {
@@ -131,12 +140,12 @@ export async function POST(request: Request) {
         endpoint: '/skill/query',
         access,
         retrievedItemIds: rows.map((row) => row.id),
-        amountPaid: chargedAmount,
+        amountPaid: split.provider,
         chain: policy.price.chain,
         token: policy.price.token,
         x402ReceiptId: receiptId,
       });
-      // Move the split amount into each provider's prepaid balance (earnings).
+      // Move the provider share into each provider's prepaid balance (earnings).
       for (const c of attr.creditedByWallet) {
         await credit(client, {
           wallet: c.wallet,
@@ -147,8 +156,19 @@ export async function POST(request: Request) {
           earned: true,
         });
       }
+      // Platform take → recognized PerkOS revenue. Reward share → accrue to the
+      // pool for the next batched $PERKOS buyback (researcher + requester).
+      await recordPlatformRevenue(client, { requestId: id, tier: policy.tier, amount: split.platform, currency: policy.price.currency });
+      await accrueReward(client, {
+        requestId: id,
+        amount: split.reward,
+        currency: policy.price.currency,
+        requesterWallet: access.wallet,
+        researcherWallets: attr.creditedByWallet.map((c) => c.wallet),
+        researcherBps: cfg.rewardResearcherBps,
+      });
     } catch {
-      // attribution/credit is secondary to the response — swallow and move on
+      // attribution/credit/fee accounting is secondary to the response — swallow.
     }
 
     return { paymentRequired: false as const, policy, x402, rows, vectorUsed, coverage: { ...coverage, requestCreated: Boolean(knowledgeRequest?.created) }, knowledgeRequest };

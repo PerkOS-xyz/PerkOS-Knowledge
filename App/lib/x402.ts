@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import type { Client } from 'pg';
 import type { AccessContext } from './access';
 
-export type X402Tier = 'public' | 'private' | 'premium';
+export type X402Tier = 'public' | 'private' | 'premium' | 'enterprise';
 
 export type X402Policy = {
   mode: 'metered_free' | 'enforce' | 'credit';
@@ -61,22 +61,27 @@ function numberEnv(name: string, fallback: number) {
 function tierAmount(tier: X402Tier) {
   if (tier === 'private') return env('KNOWLEDGE_X402_PRIVATE_PRICE_AMOUNT', env('KNOWLEDGE_X402_PRICE_AMOUNT', '0'));
   if (tier === 'premium') return env('KNOWLEDGE_X402_PREMIUM_PRICE_AMOUNT', env('KNOWLEDGE_X402_PRIVATE_PRICE_AMOUNT', env('KNOWLEDGE_X402_PRICE_AMOUNT', '0')));
+  if (tier === 'enterprise') return env('KNOWLEDGE_X402_ENTERPRISE_PRICE_AMOUNT', env('KNOWLEDGE_X402_PREMIUM_PRICE_AMOUNT', '0'));
   return env('KNOWLEDGE_X402_PUBLIC_PRICE_AMOUNT', env('KNOWLEDGE_X402_PRICE_AMOUNT', '0'));
 }
 
-export function resolveX402Tier(input?: { requestedTier?: string; hasOrganizationScope?: boolean; mode?: string }): X402Tier {
+export function resolveX402Tier(input?: { requestedTier?: string; hasOrganizationScope?: boolean; mode?: string; validated?: boolean }): X402Tier {
   const requested = String(input?.requestedTier || input?.mode || '').toLowerCase();
+  // Validated/enterprise = the guaranteed-quality product, the top tier.
+  if (requested === 'enterprise' || requested === 'validated' || input?.validated) return 'enterprise';
   if (requested === 'private' || requested === 'organization') return 'private';
   if (requested === 'premium' || requested === 'paid') return 'premium';
   return input?.hasOrganizationScope ? 'private' : 'public';
 }
 
-export function getX402Policy(endpoint = '/skill/query', tier: X402Tier = 'public'): X402Policy {
+export function getX402Policy(endpoint = '/skill/query', tier: X402Tier = 'public', priceOverride?: string | number | null): X402Policy {
   // 'credit' = prepaid balance debit (off-chain), the PerkOS billing model.
   // 'enforce' = per-request on-chain x402 receipt (facilitator path).
   const rawMode = env('KNOWLEDGE_X402_MODE', 'metered_free');
   const mode = rawMode === 'enforce' ? 'enforce' : rawMode === 'credit' ? 'credit' : 'metered_free';
-  const amount = tierAmount(tier);
+  // Price comes from the admin-editable tokenomics config when provided
+  // (the charging + display paths pass it); env is the fallback default.
+  const amount = priceOverride !== undefined && priceOverride !== null ? String(priceOverride) : tierAmount(tier);
   const currency = env('KNOWLEDGE_X402_CURRENCY', 'USDC');
   const chain = env('KNOWLEDGE_X402_CHAIN', 'base');
   const token = env('KNOWLEDGE_X402_TOKEN', 'not_configured');
