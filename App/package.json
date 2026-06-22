@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@next/env": "latest",
+    "@openzeppelin/merkle-tree": "^1.0.8",
     "@rainbow-me/rainbowkit": "^2.2.11",
     "@tanstack/react-query": "^5.100.10",
     "next": "latest",

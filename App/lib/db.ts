@@ -401,6 +401,36 @@ export async function ensureSchema(client: Client) {
   `);
   await client.query(`CREATE INDEX IF NOT EXISTS reward_pool_status_idx ON reward_pool (status, created_at)`);
 
+  // Claim distributions (pull model) — each row is a Merkle root the platform
+  // posts to PerkosClaimVault. tree_dump holds the StandardMerkleTree so any
+  // wallet's proof can be regenerated. Amounts are token base units (text).
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS claim_distributions (
+      id bigserial PRIMARY KEY,
+      root text NOT NULL,
+      tree_dump jsonb NOT NULL,
+      total_usdc text NOT NULL DEFAULT '0',
+      total_reward text NOT NULL DEFAULT '0',
+      entry_count integer NOT NULL DEFAULT 0,
+      posted boolean NOT NULL DEFAULT false,
+      tx_hash text,
+      created_by text,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  await client.query(`CREATE INDEX IF NOT EXISTS claim_distributions_created_idx ON claim_distributions (created_at DESC)`);
+
+  // Cumulative $PERKOS reward owed per wallet (token base units, 18-dec). The
+  // buyback worker fills this after converting the reward pool USDC → $PERKOS;
+  // the claim roll-up reads it. Empty until the buyback is wired.
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS token_rewards (
+      wallet text PRIMARY KEY,
+      cumulative_perkos numeric NOT NULL DEFAULT 0,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+
 
   await client.query(`CREATE INDEX IF NOT EXISTS research_items_agents_idx ON research_items USING gin (agents)`);
   await client.query(`CREATE INDEX IF NOT EXISTS research_items_chains_idx ON research_items USING gin (chains)`);
