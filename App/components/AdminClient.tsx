@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useAccount } from 'wagmi';
+import VaultOwnerPanel from './VaultOwnerPanel';
 
 type Policy = { tier: string; price: { amount: string; currency: string } };
 type Cfg = { mode: string; policies: Policy[]; env: Record<string, string> };
@@ -189,6 +190,9 @@ export default function AdminClient() {
           </div>
         ) : <p className="body">Loading tokenomics…</p>}
       </section>
+
+      {/* Vault owner ops — only renders when the connected wallet is the vault owner */}
+      <VaultOwnerPanel />
 
       {/* Whitelist */}
       <section className="dashPanel wide">
