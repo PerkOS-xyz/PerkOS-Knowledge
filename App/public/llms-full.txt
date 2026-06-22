@@ -28,7 +28,9 @@ Integration plugin: https://github.com/PerkOS-xyz/PerkOS-Knowledge-Plugin
 - `GET /skill/manifest` — live skill manifest: capabilities, auth headers, visibility model, endpoints.
 - `POST /skill/query` — agent skill query; returns context/sources for the caller's own LLM. Runs in x402 `credit` mode: a paid tier debits the consumer's prepaid balance and credits the answering providers. Public/private/premium tiers.
 - `GET /api/x402/policy` — public x402 policy metadata (live per-tier prices and payment mode).
-- `GET /api/credits/:wallet` — balance, total earned/spent, per-agent earnings & spend, recent credit ledger (authorized wallets).
+- `GET /api/credits/:wallet` — balance (with a per-chain `byChain` breakdown), total earned/spent, per-agent earnings & spend, recent credit ledger (authorized wallets).
+- `POST /api/deposit` — on-chain USDC top-up via x402 (Base or Celo); returns a 402 challenge, settles through PerkOS Stack, credits the verified payer on the pay-chain. Optional `creditTo` to fund another wallet.
+- `GET /api/claims/:wallet` — per-chain claim entry + Merkle proof for pulling provider earnings + $PERKOS reward from the PerkosClaimVault.
 - `GET /healthz` — service health check.
 - `GET /api/health` — JSON API health check.
 - `GET /api/stats` — operational database stats.
@@ -55,13 +57,13 @@ Integration plugin: https://github.com/PerkOS-xyz/PerkOS-Knowledge-Plugin
 
 PerkOS Knowledge runs a live two-sided credit market in x402 `credit` mode:
 
-- **Prepaid credit balance per wallet.** A consumer's wallet holds a credit balance. Each paid query debits it by the tier price.
-- **Providers earn on consumption.** When a query is answered, its value is split equally across the providers whose items were used, recorded as an attribution, and credited to each provider's wallet. Every debit/credit is journaled in a credit ledger.
-- **Tiers & prices** (authoritative live values at `/api/x402/policy`): `public` = $0 (free, open), `private` = $0.005/query (organization-scoped), `premium` = $0.01/query. Currency is USDC on Base (token `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`).
+- **Prepaid credit balance per (wallet, chain).** A consumer's wallet holds a credit balance *per chain* (Base, Celo). Each paid query debits the balance on its pay-chain by the tier price. Pick the chain via `POST /skill/query` body `payChain`/`chain` or header `x-payment-chain` (`base`|`celo`, default `base`).
+- **Providers earn on the pay-chain.** When a query is answered, the provider share is split equally across the providers whose items were used, recorded as a per-chain attribution, and credited to each provider's balance **on the chain the consumer paid on** (payment-chain = earning-chain). The charged amount splits provider 75% / platform 20% (PerkOS revenue) / $PERKOS reward 5% (live split at `/api/x402/policy`). Every move is journaled in a credit ledger.
+- **Tiers & prices** (authoritative live values at `/api/x402/policy` — don't hardcode): `public` = $0 (free, open), `private` (organization-scoped), `premium`, `enterprise` (validated-only, highest tier). Currency is USDC on **Base** (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`) or **Celo** (`0xcebA9300f2b948710d2653dD7B07f33A8B32118C`).
 - **Exemptions / whitelist.** PerkOS internal and research agents can be marked exempt (`agent_billing.exempt` or an exempt-wallet list) so they query for free — useful for agents whose job is to research and provide, not pay.
 - **Insufficient funds.** A paid query against a low balance returns HTTP `402` with `{ "creditError": "insufficient_credit", "balance", "price" }`. A paid tier with no wallet returns `{ "creditError": "wallet_required" }`. `public` ($0) is never blocked.
-- **Funding.** Today balances are seeded by an admin grant/top-up (`POST /api/admin/credits/grant`); on-chain self-deposit (pay USDC → auto-credit via an x402 receipt) is planned.
-- **Payouts.** Providers' accrued credits are paid out on-chain in USDC from the PerkOS treasury via `POST /api/admin/settle`; without a treasury key configured a settlement is recorded for manual payout (balance kept).
+- **Funding (on-chain x402).** `POST /api/deposit` `{ wallet, amount, network: "base"|"celo", creditTo? }` tops up a balance with on-chain USDC. No `X-PAYMENT` header → HTTP `402` returning `accepts` (payment requirements for Base + Celo); the payer signs a gasless EIP-3009 USDC authorization and retries. Settled through **PerkOS Stack** (`stack.perkos.xyz`, the standards x402 facilitator); the verified on-chain payer is credited on the chain they paid (tx-hash + EIP-3009 nonce make it replay-safe). `creditTo` lets a human fund an agent's wallet directly — supports both the shared-owner-wallet and per-agent-wallet models. Admin grants (`POST /api/admin/credits/grant`, optional `chain`) remain for stipends.
+- **Payouts (pull / claim model).** Providers **claim** their accrued USDC earnings + $PERKOS reward on-chain from the dashboard. The platform funds a `PerkosClaimVault` (UUPS, same address on Base + Celo) and posts a per-chain cumulative-Merkle root; a provider calls `claim(account, cumUsdc, cumReward, proof)` to pull what they're owed on each chain (re-posting roots + partial claims are safe). `GET /api/claims/{wallet}` returns the entry + proof per chain. (The legacy push path `POST /api/admin/settle` still exists for manual treasury payouts.)
 
 ## Agent Identity Model
 
