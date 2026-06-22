@@ -407,6 +407,7 @@ export async function ensureSchema(client: Client) {
   await client.query(`
     CREATE TABLE IF NOT EXISTS claim_distributions (
       id bigserial PRIMARY KEY,
+      chain text NOT NULL DEFAULT 'base',
       root text NOT NULL,
       tree_dump jsonb NOT NULL,
       total_usdc text NOT NULL DEFAULT '0',
@@ -418,6 +419,9 @@ export async function ensureSchema(client: Client) {
       created_at timestamptz NOT NULL DEFAULT now()
     )
   `);
+  // Per-chain distributions: earnings are segregated by the consumer's payment
+  // chain, so each chain has its own root (no cross-chain double-claim).
+  await client.query(`ALTER TABLE claim_distributions ADD COLUMN IF NOT EXISTS chain text NOT NULL DEFAULT 'base'`);
   await client.query(`CREATE INDEX IF NOT EXISTS claim_distributions_created_idx ON claim_distributions (created_at DESC)`);
 
   // Cumulative $PERKOS reward owed per wallet (token base units, 18-dec). The
