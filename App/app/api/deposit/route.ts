@@ -72,7 +72,16 @@ export async function POST(request: Request) {
     return Response.json({ ok: false, error: "settlement_failed", reason: settle.error }, { status: 402 });
   }
 
-  const payee = settle.payer && /^0x[0-9a-fA-F]{40}$/.test(settle.payer) ? settle.payer : wallet;
+  // Who gets the credit: an explicit `creditTo` (fund someone else — e.g. your
+  // agent's wallet, your money your choice), else the verified on-chain payer,
+  // else the body wallet. Supports both the shared-owner-wallet (A) and the
+  // per-agent-wallet (B) models, plus human→agent top-ups.
+  const creditTo = typeof body.creditTo === "string" ? body.creditTo.trim() : "";
+  const payee = /^0x[0-9a-fA-F]{40}$/.test(creditTo)
+    ? creditTo
+    : settle.payer && /^0x[0-9a-fA-F]{40}$/.test(settle.payer)
+      ? settle.payer
+      : wallet;
 
   const result = await withDb(async (c) => {
     // De-dup: a settled tx credits at most once.

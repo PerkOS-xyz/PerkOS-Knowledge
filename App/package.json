@@ -21,7 +21,8 @@
     "react": "latest",
     "react-dom": "latest",
     "viem": "^2.48.11",
-    "wagmi": "^2.19.5"
+    "wagmi": "^2.19.5",
+    "x402-fetch": "^1.2.0"
   },
   "devDependencies": {
     "@types/node": "latest",

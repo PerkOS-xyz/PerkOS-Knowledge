@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useAccount } from 'wagmi';
 
 import ClaimPanel from './ClaimPanel';
+import DepositPanel from './DepositPanel';
 
 type Bucket = { name: string; count: number };
 type Usage = {
@@ -127,6 +128,8 @@ export default function DashboardClient() {
         <article className="metric"><span>Total spent</span><strong>{fmt(credits?.totalSpent ?? 0, cur)}</strong></article>
         <article className="metric"><span>Knowledge items</span><strong>{usage.knowledge.knowledgeItemsAvailable}</strong></article>
       </section>
+
+      <DepositPanel />
 
       <ClaimPanel />
 
