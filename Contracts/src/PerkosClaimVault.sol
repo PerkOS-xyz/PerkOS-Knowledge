@@ -69,6 +69,7 @@ contract PerkosClaimVault is
     event RootUpdated(uint256 indexed epoch, bytes32 root, address indexed by);
     event Claimed(address indexed account, uint256 usdcAmount, uint256 rewardAmount, uint256 indexed epoch);
     event DistributorUpdated(address indexed distributor);
+    event RewardTokenUpdated(address indexed rewardToken);
     event OwnerWithdraw(address indexed token, address indexed to, uint256 amount);
     event UpgradeAuthorized(address indexed newImplementation, address indexed by);
 
@@ -90,7 +91,7 @@ contract PerkosClaimVault is
         address rewardToken_,
         address distributor_
     ) external initializer {
-        if (initialOwner == address(0) || usdc_ == address(0) || rewardToken_ == address(0)) {
+        if (initialOwner == address(0) || usdc_ == address(0)) {
             revert ZeroAddress();
         }
         __Ownable_init(initialOwner);
@@ -98,6 +99,9 @@ contract PerkosClaimVault is
         __ReentrancyGuard_init();
         __UUPSUpgradeable_init();
         usdc = IERC20(usdc_);
+        // rewardToken may be 0 at deploy — $PERKOS is bought later by the buyback;
+        // wire it with setRewardToken once it exists. Until then the reward leg
+        // is inert (USDC payment claims work from day one).
         rewardToken = IERC20(rewardToken_);
         distributor = distributor_; // may be 0 (owner-only)
     }
@@ -121,6 +125,13 @@ contract PerkosClaimVault is
     function setDistributor(address distributor_) external onlyOwner {
         distributor = distributor_;
         emit DistributorUpdated(distributor_);
+    }
+
+    /// @notice Set the reward token ($PERKOS). Deferred from deploy because the
+    ///         buyback mints/buys it later; until set, the reward leg is inert.
+    function setRewardToken(address rewardToken_) external onlyOwner {
+        rewardToken = IERC20(rewardToken_);
+        emit RewardTokenUpdated(rewardToken_);
     }
 
     /// @notice Emergency / treasury sweep — owner can move any token out.
@@ -167,13 +178,19 @@ contract PerkosClaimVault is
         if (!MerkleProof.verify(proof, merkleRoot, leaf)) revert InvalidProof();
 
         (uint256 usdcOwed, uint256 rewardOwed) = claimableDelta(account, cumUsdc, cumReward);
+        // The reward leg stays inert until $PERKOS is set; the owed reward stays
+        // claimable (claimedReward untouched) so the same proof works once it is.
+        if (rewardOwed > 0 && address(rewardToken) == address(0)) rewardOwed = 0;
         if (usdcOwed == 0 && rewardOwed == 0) revert NothingToClaim();
 
-        if (usdcOwed > 0) claimedUsdc[account] = cumUsdc;
-        if (rewardOwed > 0) claimedReward[account] = cumReward;
-
-        if (usdcOwed > 0) usdc.safeTransfer(account, usdcOwed);
-        if (rewardOwed > 0) rewardToken.safeTransfer(account, rewardOwed);
+        if (usdcOwed > 0) {
+            claimedUsdc[account] = cumUsdc;
+            usdc.safeTransfer(account, usdcOwed);
+        }
+        if (rewardOwed > 0) {
+            claimedReward[account] = cumReward;
+            rewardToken.safeTransfer(account, rewardOwed);
+        }
 
         emit Claimed(account, usdcOwed, rewardOwed, epoch);
     }

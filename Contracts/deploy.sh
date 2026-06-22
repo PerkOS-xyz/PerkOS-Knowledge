@@ -23,7 +23,10 @@ set +a
 : "${SAFE_OWNER:?SAFE_OWNER required}"
 : "${DEPLOYER_PRIVATE_KEY:?DEPLOYER_PRIVATE_KEY required}"
 : "${USDC_ADDRESS:?USDC_ADDRESS required}"
-: "${PERKOS_ADDRESS:?PERKOS_ADDRESS required}"
+# $PERKOS is OPTIONAL at deploy — it's bought later by the buyback. Leave unset
+# (defaults to 0x0) and wire it with setRewardToken when it exists; USDC payment
+# claims work from day one.
+PERKOS_ADDRESS="${PERKOS_ADDRESS:-0x0000000000000000000000000000000000000000}"
 DISTRIBUTOR_ADDRESS="${DISTRIBUTOR_ADDRESS:-0x0000000000000000000000000000000000000000}"
 
 if [[ "$NETWORK" == "sepolia" ]]; then

@@ -167,6 +167,38 @@ contract PerkosClaimVaultTest is Test {
         vault.setMerkleRoot(bytes32(uint256(2)));
     }
 
+    function test_DeployWithoutRewardToken_usdcWorks_rewardDeferred() public {
+        // Fresh vault with rewardToken = 0 ($PERKOS not bought yet).
+        PerkosClaimVault impl = new PerkosClaimVault();
+        bytes memory initData = abi.encodeCall(
+            PerkosClaimVault.initialize,
+            (owner, address(usdc), address(0), distributor)
+        );
+        PerkosClaimVault v = PerkosClaimVault(address(new ERC1967Proxy(address(impl), initData)));
+        usdc.mint(address(v), 1_000);
+        perkos.mint(address(v), 1_000 ether);
+
+        bytes32 la = _leaf(alice, 100, 50 ether);
+        bytes32 lb = _leaf(bob, 1, 0);
+        (bytes32 root, bytes32[] memory pa, ) = _tree2(la, lb);
+        vm.prank(owner);
+        v.setMerkleRoot(root);
+
+        // USDC transfers; the reward leg is inert (token unset) and stays owed.
+        v.claim(alice, 100, 50 ether, pa);
+        assertEq(usdc.balanceOf(alice), 100);
+        assertEq(perkos.balanceOf(alice), 0);
+        assertEq(v.claimedUsdc(alice), 100);
+        assertEq(v.claimedReward(alice), 0);
+
+        // Owner wires $PERKOS; the same proof now releases the deferred reward.
+        vm.prank(owner);
+        v.setRewardToken(address(perkos));
+        v.claim(alice, 100, 50 ether, pa);
+        assertEq(perkos.balanceOf(alice), 50 ether);
+        assertEq(v.claimedReward(alice), 50 ether);
+    }
+
     function test_pause_blocks_claim() public {
         bytes32[] memory proofA = _setRoot2(100, 50 ether, 0, 0);
         vm.prank(owner);
