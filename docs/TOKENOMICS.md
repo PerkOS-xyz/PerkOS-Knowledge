@@ -80,14 +80,43 @@ The 5% reward share is the token flywheel. Mechanics:
 2. **Batch (mandatory)** — a per-query on-chain buy is impossible (Base gas
    $0.01–0.05 ≫ a $0.0005 reward). The buyback fires **per epoch**: when the
    pending pool clears `buybackThreshold` (default $100).
-3. **Buy + distribute** — the treasury market-buys $PERKOS on a Base DEX for the
-   pooled USDC, then distributes the bought token pro-rata to that epoch's
-   **researchers (60%) + requesters (40%)** (configurable), marks the rows
-   `distributed`, and records `token_rewards`.
+3. **Buy + fund the vault** — the treasury market-buys $PERKOS on a Base DEX for
+   the pooled USDC and moves it into the claim vault.
+4. **Claim, not push** — the platform does **not** auto-send tokens. It computes
+   each wallet's cumulative owed $PERKOS (researcher 60% / requester 40%) and
+   posts a Merkle root to the vault. Participants **claim from their dashboard**.
 
 **Effects:** real buy pressure (revenue → token), measurable on-chain token
 transactions, and alignment — participants hold $PERKOS, so they want the
 platform to grow.
+
+## Claim vault — the control contract (`PerkosClaimVault`)
+
+Decided 2026-06-22: **pull, not push.** Rather than the platform multisending
+payouts, a single on-chain vault custodies the funds and participants withdraw
+what they're owed from their dashboard — both **USDC payment** (provider
+earnings) and **$PERKOS reward** in one claim. Why this beats auto-distribute:
+
+- **Gas** — no platform-paid multisends; each user pays their own claim.
+- **Legal** — a user *withdrawing their earnings* reads very differently from the
+  platform *distributing tokens*; far cleaner footing for the reward leg.
+- **Self-custody + trust-min** — the vault holds funds; the platform can only
+  publish "who can claim how much" (a Merkle root), never move a user's balance.
+
+`PerkOS-Contracts/src/PerkosClaimVault.sol` (UUPS, OZ 5, Base) is a **cumulative
+Merkle distributor** over two tokens. Each epoch the platform funds the vault and
+posts a root encoding `(account, cumulativeUsdc, cumulativeReward)`; `claim(...)`
+verifies the proof and sends the **delta** since the account's last claim (so
+re-posting roots + partial claims are safe). Root-setting defaults to the owner
+(a Safe multisig); a hot `distributor` key may be delegated for automation, with
+`pause` + `ownerWithdraw` as backstops. **Not yet audited — testnet first.**
+
+Off-chain (Knowledge): a service rolls up unsettled provider earnings
+(`agent_accounts`/`knowledge_attributions`) + the bought $PERKOS
+(`reward_pool` post-buyback) into per-wallet cumulative totals, builds the tree
+(the openzeppelin merkle-tree lib, leaf `["address","uint256","uint256"]`), funds
+the vault, and posts the root. The dashboard reads each wallet's cumulative entry
++ proof and renders a **Claim** button.
 
 ### The three rules we don't break
 
@@ -114,12 +143,17 @@ provider settlement, which is likewise pending.)
 - **P1 — shipped (2026-06-22):** configurable waterfall (75/20/5), `enterprise`
   tier + new prices, `platform_revenue` + `reward_pool` accrual, admin Tokenomics
   editor + revenue/pool summary.
-- **P2 — next:** $PERKOS utility sinks (pay-in-PERKOS discount, stake-to-boost) so
-  rewards have somewhere to go. Subscriptions/seats. Charge-on-miss / refund
-  policy (today a coverage-miss still debits; the provider share is unallocated
-  float).
-- **P3 — gated:** wire the buyback worker (viem on Base, DEX router, slippage
-  guard, batched distribute / merkle-claim) **after legal + treasury key**.
+- **P2 — claim vault wiring:** deploy `PerkosClaimVault` (Base Sepolia → Base),
+  build the off-chain Merkle roll-up service (cumulative per-wallet USDC + PERKOS)
+  + root-post job, and add the **Claim** flow to the dashboard. Lets providers
+  pull their USDC earnings even before the buyback exists. *(Contract + tests
+  shipped 2026-06-22; off-chain + dashboard next.)*
+- **P3 — utility sinks:** pay-in-PERKOS discount, stake-to-boost (provider share /
+  reward multiplier / queue priority). Subscriptions/seats. Charge-on-miss /
+  refund policy (today a coverage-miss still debits; the provider share is
+  unallocated float).
+- **P4 — gated:** wire the buyback (viem on Base, DEX router, slippage guard) to
+  fund the vault + post roots **after legal + treasury key**.
 
 ## Code map
 

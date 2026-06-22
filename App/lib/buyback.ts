@@ -3,10 +3,11 @@
  *
  * The reward pool (lib/tokenomics.accrueReward) collects the per-query reward
  * share in USDC. Once per epoch — when the pool clears the configured threshold
- * — this would market-buy $PERKOS on a Base DEX for the accrued USDC and
- * distribute the bought token pro-rata to the epoch's requesters + researchers
- * (per each row's `researcher_bps`), generating real buy pressure + on-chain
- * token transactions.
+ * — this would market-buy $PERKOS on a Base DEX for the accrued USDC, move it
+ * into the PerkosClaimVault, and post a cumulative Merkle root so participants
+ * can PULL their reward from the dashboard (claim, not push — see
+ * docs/TOKENOMICS.md + PerkOS-Contracts/src/PerkosClaimVault.sol). That generates
+ * real buy pressure + on-chain token transactions without platform multisends.
  *
  * It is gated three ways and ships as a no-op:
  *   1. `tokenomics.buybackEnabled` must be true (admin flag), AND
