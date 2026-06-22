@@ -24,7 +24,8 @@ contract DeployClaimVault is Script {
         returns (address proxy, address implementation)
     {
         require(owner != address(0), "owner zero");
-        require(usdc != address(0) && perkos != address(0), "token zero");
+        require(usdc != address(0), "usdc zero");
+        // perkos may be 0 — wired later with setRewardToken (USDC claims work now).
 
         vm.startBroadcast();
 

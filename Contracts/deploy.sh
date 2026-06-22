@@ -37,13 +37,15 @@ else
   [[ "$confirm" == "YES" ]] || { echo "aborted."; exit 1; }
 fi
 
-VERIFY_FLAGS=()
-[[ -n "${ETHERSCAN_API_KEY:-}" ]] && VERIFY_FLAGS=(--verify)
+# String (not array) so an empty value is safe under `set -u` on bash 3.2 (macOS).
+VERIFY=""
+[[ -n "${ETHERSCAN_API_KEY:-}" ]] && VERIFY="--verify"
 
+# shellcheck disable=SC2086  # $VERIFY is intentionally word-split (empty or --verify)
 forge script script/DeployClaimVault.s.sol:DeployClaimVault \
   --rpc-url "$RPC" \
   --broadcast \
   --private-key "$DEPLOYER_PRIVATE_KEY" \
-  "${VERIFY_FLAGS[@]}" \
+  $VERIFY \
   --sig 'run(address,address,address,address)' \
   "$SAFE_OWNER" "$USDC_ADDRESS" "$PERKOS_ADDRESS" "$DISTRIBUTOR_ADDRESS"
