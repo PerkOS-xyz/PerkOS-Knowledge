@@ -1,0 +1,4 @@
+
+# API route literally named "build" — not build output
+!app/api/admin/claims/build/
+!app/api/admin/claims/build/route.ts
