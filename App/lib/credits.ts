@@ -40,18 +40,20 @@ export async function isExempt(
   return r.rows[0]?.exempt === true;
 }
 
-export async function getBalance(client: Client, wallet: string): Promise<number> {
+/** Balance lives PER (wallet, chain) — a consumer who deposits on Celo has Celo
+ *  credits; spending them earns providers on Celo. chain defaults to 'base'. */
+export async function getBalance(client: Client, wallet: string, chain = "base"): Promise<number> {
   const r = await client.query(
-    `SELECT balance::float8 AS balance FROM agent_accounts WHERE lower(wallet) = lower($1)`,
-    [wallet],
+    `SELECT balance::float8 AS balance FROM agent_accounts WHERE lower(wallet) = lower($1) AND chain = $2`,
+    [wallet, chain],
   );
   return r.rows[0]?.balance ?? 0;
 }
 
-async function ensureAccount(client: Client, wallet: string): Promise<void> {
+async function ensureAccount(client: Client, wallet: string, chain: string): Promise<void> {
   await client.query(
-    `INSERT INTO agent_accounts (wallet) VALUES (lower($1)) ON CONFLICT (wallet) DO NOTHING`,
-    [wallet],
+    `INSERT INTO agent_accounts (wallet, chain) VALUES (lower($1), $2) ON CONFLICT (wallet, chain) DO NOTHING`,
+    [wallet, chain],
   );
 }
 
@@ -60,9 +62,9 @@ export type DebitResult =
   | { ok: false; reason: "insufficient"; balance: number };
 
 /**
- * Atomically debit a wallet's balance. Overdraft-safe: the UPDATE only matches
- * when balance >= amount, so a concurrent double-spend can't drive it negative
- * (single statement, no read-modify-write race). amount<=0 is a no-op success.
+ * Atomically debit a (wallet, chain) balance. Overdraft-safe: the UPDATE only
+ * matches when balance >= amount, so a concurrent double-spend can't drive it
+ * negative. amount<=0 is a no-op success.
  */
 export async function debit(
   client: Client,
@@ -72,32 +74,34 @@ export async function debit(
     amount: number;
     reason: string;
     requestId?: string | null;
+    chain?: string;
   },
 ): Promise<DebitResult> {
+  const chain = input.chain ?? "base";
   if (!(input.amount > 0)) {
-    return { ok: true, balanceAfter: await getBalance(client, input.wallet) };
+    return { ok: true, balanceAfter: await getBalance(client, input.wallet, chain) };
   }
-  await ensureAccount(client, input.wallet);
+  await ensureAccount(client, input.wallet, chain);
   const upd = await client.query(
     `UPDATE agent_accounts
-        SET balance = balance - $2, total_spent = total_spent + $2, updated_at = now()
-      WHERE lower(wallet) = lower($1) AND balance >= $2
+        SET balance = balance - $3, total_spent = total_spent + $3, updated_at = now()
+      WHERE lower(wallet) = lower($1) AND chain = $2 AND balance >= $3
       RETURNING balance::float8 AS balance`,
-    [input.wallet, input.amount],
+    [input.wallet, chain, input.amount],
   );
   if (!upd.rowCount) {
-    return { ok: false, reason: "insufficient", balance: await getBalance(client, input.wallet) };
+    return { ok: false, reason: "insufficient", balance: await getBalance(client, input.wallet, chain) };
   }
   const balanceAfter = upd.rows[0].balance as number;
   await client.query(
-    `INSERT INTO credit_ledger (wallet, agent_id, kind, amount, reason, request_id, balance_after)
-     VALUES (lower($1), $2, 'debit', $3, $4, $5, $6)`,
-    [input.wallet, input.agentId ?? null, input.amount, input.reason, input.requestId ?? null, balanceAfter],
+    `INSERT INTO credit_ledger (wallet, chain, agent_id, kind, amount, reason, request_id, balance_after)
+     VALUES (lower($1), $2, $3, 'debit', $4, $5, $6, $7)`,
+    [input.wallet, chain, input.agentId ?? null, input.amount, input.reason, input.requestId ?? null, balanceAfter],
   );
   return { ok: true, balanceAfter };
 }
 
-/** Credit a wallet's balance (provider earnings, deposit, or admin grant). */
+/** Credit a (wallet, chain) balance (provider earnings, deposit, or admin grant). */
 export async function credit(
   client: Client,
   input: {
@@ -109,26 +113,29 @@ export async function credit(
     x402ReceiptId?: string | null;
     earned?: boolean;
     deposited?: boolean;
+    chain?: string;
   },
 ): Promise<number> {
-  if (!(input.amount > 0)) return getBalance(client, input.wallet);
-  await ensureAccount(client, input.wallet);
+  const chain = input.chain ?? "base";
+  if (!(input.amount > 0)) return getBalance(client, input.wallet, chain);
+  await ensureAccount(client, input.wallet, chain);
   const extra =
-    (input.earned ? ", total_earned = total_earned + $2" : "") +
-    (input.deposited ? ", total_deposited = total_deposited + $2" : "");
+    (input.earned ? ", total_earned = total_earned + $3" : "") +
+    (input.deposited ? ", total_deposited = total_deposited + $3" : "");
   const upd = await client.query(
     `UPDATE agent_accounts
-        SET balance = balance + $2${extra}, updated_at = now()
-      WHERE lower(wallet) = lower($1)
+        SET balance = balance + $3${extra}, updated_at = now()
+      WHERE lower(wallet) = lower($1) AND chain = $2
       RETURNING balance::float8 AS balance`,
-    [input.wallet, input.amount],
+    [input.wallet, chain, input.amount],
   );
   const balanceAfter = upd.rows[0].balance as number;
   await client.query(
-    `INSERT INTO credit_ledger (wallet, agent_id, kind, amount, reason, request_id, x402_receipt_id, balance_after)
-     VALUES (lower($1), $2, 'credit', $3, $4, $5, $6, $7)`,
+    `INSERT INTO credit_ledger (wallet, chain, agent_id, kind, amount, reason, request_id, x402_receipt_id, balance_after)
+     VALUES (lower($1), $2, $3, 'credit', $4, $5, $6, $7, $8)`,
     [
       input.wallet,
+      chain,
       input.agentId ?? null,
       input.amount,
       input.reason,
@@ -176,6 +183,7 @@ export type AccountSummary = {
   totalEarned: number;
   totalSpent: number;
   totalDeposited: number;
+  byChain: Array<{ chain: string; balance: number; totalEarned: number; totalSpent: number; totalDeposited: number }>;
   earningsByAgent: Array<{ agentId: string | null; amount: number; count: number }>;
   spendByAgent: Array<{ agentId: string | null; amount: number; count: number }>;
   recent: Array<{
@@ -195,10 +203,16 @@ export async function getAccountSummary(
   limit = 25,
 ): Promise<AccountSummary> {
   const w = wallet.toLowerCase();
-  const [acct, earned, spent, recent] = await Promise.all([
+  const [acct, byChain, earned, spent, recent] = await Promise.all([
     client.query(
-      `SELECT balance::float8 b, currency, total_earned::float8 te, total_spent::float8 ts, total_deposited::float8 td
+      `SELECT coalesce(sum(balance),0)::float8 b, max(currency) currency, coalesce(sum(total_earned),0)::float8 te,
+              coalesce(sum(total_spent),0)::float8 ts, coalesce(sum(total_deposited),0)::float8 td
          FROM agent_accounts WHERE lower(wallet) = $1`,
+      [w],
+    ),
+    client.query(
+      `SELECT chain, balance::float8 b, total_earned::float8 te, total_spent::float8 ts, total_deposited::float8 td
+         FROM agent_accounts WHERE lower(wallet) = $1 ORDER BY chain`,
       [w],
     ),
     client.query(
@@ -225,6 +239,7 @@ export async function getAccountSummary(
     totalEarned: a?.te ?? 0,
     totalSpent: a?.ts ?? 0,
     totalDeposited: a?.td ?? 0,
+    byChain: byChain.rows.map((r) => ({ chain: r.chain, balance: r.b, totalEarned: r.te, totalSpent: r.ts, totalDeposited: r.td })),
     earningsByAgent: earned.rows.map((r) => ({ agentId: r.agent_id ?? null, amount: r.amount, count: r.count })),
     spendByAgent: spent.rows.map((r) => ({ agentId: r.agent_id ?? null, amount: r.amount, count: r.count })),
     recent: recent.rows.map((r) => ({

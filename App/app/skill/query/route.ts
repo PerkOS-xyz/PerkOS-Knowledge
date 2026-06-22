@@ -38,6 +38,10 @@ export async function POST(request: Request) {
     const access = await getAccessContext(client, request);
     const cfg = await loadTokenomics(client);
     const requestedOrg = Boolean(request.headers.get('x-organization-id') || request.headers.get('x-org-id'));
+    // The consumer pays from a specific chain's balance — and that's the chain
+    // the provider earns on (payment-chain = earning-chain). Default Base.
+    const reqChain = String(body.payChain || body.chain || request.headers.get('x-payment-chain') || 'base').toLowerCase();
+    const payChain = reqChain === 'celo' ? 'celo' : 'base';
     // Validated-only queries buy the top (enterprise) tier — guaranteed quality.
     const tier = resolveX402Tier({ requestedTier: body.tier || body.scope, hasOrganizationScope: requestedOrg || access.organizationIds.length > 0, mode, validated: requireValidated });
     const policy = getX402Policy('/skill/query', tier, priceForTier(cfg, tier));
@@ -59,7 +63,7 @@ export async function POST(request: Request) {
       if (!access.wallet) {
         return { paymentRequired: true as const, policy, x402, rows: [], creditError: 'wallet_required' as const };
       }
-      const charged = await debit(client, { wallet: access.wallet, agentId: access.agentId, amount: price, reason: 'query', requestId: id });
+      const charged = await debit(client, { wallet: access.wallet, agentId: access.agentId, amount: price, reason: 'query', requestId: id, chain: payChain });
       if (!charged.ok) {
         return { paymentRequired: true as const, policy, x402, rows: [], creditError: 'insufficient_credit' as const, balance: charged.balance, price };
       }
@@ -141,11 +145,12 @@ export async function POST(request: Request) {
         access,
         retrievedItemIds: rows.map((row) => row.id),
         amountPaid: split.provider,
-        chain: policy.price.chain,
+        chain: payChain,
         token: policy.price.token,
         x402ReceiptId: receiptId,
       });
-      // Move the provider share into each provider's prepaid balance (earnings).
+      // Move the provider share into each provider's prepaid balance (earnings),
+      // ON THE PAYMENT CHAIN — so the provider earns where the consumer paid.
       for (const c of attr.creditedByWallet) {
         await credit(client, {
           wallet: c.wallet,
@@ -154,6 +159,7 @@ export async function POST(request: Request) {
           reason: 'attribution',
           requestId: id,
           earned: true,
+          chain: payChain,
         });
       }
       // Platform take → recognized PerkOS revenue. Reward share → accrue to the

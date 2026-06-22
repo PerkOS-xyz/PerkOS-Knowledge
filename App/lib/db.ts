@@ -281,7 +281,8 @@ export async function ensureSchema(client: Client) {
   // Prepaid credit balance per OWNER wallet — the money lives at the wallet.
   await client.query(`
     CREATE TABLE IF NOT EXISTS agent_accounts (
-      wallet text PRIMARY KEY,
+      wallet text NOT NULL,
+      chain text NOT NULL DEFAULT 'base',
       balance numeric NOT NULL DEFAULT 0,
       currency text NOT NULL DEFAULT 'USDC',
       total_earned numeric NOT NULL DEFAULT 0,
@@ -291,6 +292,12 @@ export async function ensureSchema(client: Client) {
       created_at timestamptz NOT NULL DEFAULT now()
     )
   `);
+  // Per-chain balances: balance/earnings live per (wallet, chain) so the chain a
+  // consumer pays on is the chain the provider earns on. Migrate the legacy
+  // single-wallet PK → a (wallet, chain) unique key (existing rows default 'base').
+  await client.query(`ALTER TABLE agent_accounts ADD COLUMN IF NOT EXISTS chain text NOT NULL DEFAULT 'base'`);
+  await client.query(`ALTER TABLE agent_accounts DROP CONSTRAINT IF EXISTS agent_accounts_pkey`);
+  await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS agent_accounts_wallet_chain_uidx ON agent_accounts (wallet, chain)`);
   // Per-agent billing config = the whitelist. exempt agents query for free;
   // role marks providers (earn) vs consumers. PerkOS internal / research
   // agents are exempt:true, role 'provider' or 'both'.
@@ -311,6 +318,7 @@ export async function ensureSchema(client: Client) {
     CREATE TABLE IF NOT EXISTS credit_ledger (
       id bigserial PRIMARY KEY,
       wallet text NOT NULL,
+      chain text NOT NULL DEFAULT 'base',
       agent_id text,
       kind text NOT NULL,
       amount numeric NOT NULL,
@@ -321,6 +329,7 @@ export async function ensureSchema(client: Client) {
       created_at timestamptz NOT NULL DEFAULT now()
     )
   `);
+  await client.query(`ALTER TABLE credit_ledger ADD COLUMN IF NOT EXISTS chain text NOT NULL DEFAULT 'base'`);
   await client.query(`CREATE INDEX IF NOT EXISTS credit_ledger_wallet_idx ON credit_ledger (lower(wallet), created_at DESC)`);
   await client.query(`CREATE INDEX IF NOT EXISTS credit_ledger_agent_idx ON credit_ledger (agent_id, created_at DESC)`);
   await client.query(`CREATE INDEX IF NOT EXISTS agent_billing_wallet_idx ON agent_billing (lower(wallet))`);

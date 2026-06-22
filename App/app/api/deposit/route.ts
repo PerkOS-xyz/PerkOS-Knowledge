@@ -90,16 +90,19 @@ export async function POST(request: Request) {
         settle.transaction,
       ]);
       if (dup.rowCount) {
-        const r = await c.query(`SELECT balance::float8 b FROM agent_accounts WHERE lower(wallet)=lower($1)`, [payee]);
+        const r = await c.query(`SELECT balance::float8 b FROM agent_accounts WHERE lower(wallet)=lower($1) AND chain=$2`, [payee, net]);
         return { balance: r.rows[0]?.b ?? 0, deduped: true };
       }
     }
+    // Credit the deposit ON THE CHAIN it was paid — that's the chain those
+    // credits will earn providers on when spent.
     const balance = await credit(c, {
       wallet: payee,
       amount,
       reason: "deposit",
       deposited: true,
       x402ReceiptId: settle.transaction,
+      chain: net,
     });
     return { balance, deduped: false };
   });
