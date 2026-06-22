@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
-# Deploy PerkosClaimVault (UUPS proxy) to Base. Sources .env first.
+# Deploy PerkosClaimVault (UUPS proxy). Sources .env first.
 #
 #   ./deploy.sh sepolia   → Base Sepolia (chainId 84532, faucet ETH)
-#   ./deploy.sh mainnet   → Base mainnet (chainId 8453, real ETH)
+#   ./deploy.sh base      → Base mainnet  (chainId 8453)
+#   ./deploy.sh celo      → Celo mainnet  (chainId 42220)
 #
-# .env must define SAFE_OWNER, DEPLOYER_PRIVATE_KEY, USDC_ADDRESS, PERKOS_ADDRESS
-# (DISTRIBUTOR_ADDRESS + ETHERSCAN_API_KEY optional). See .env.example.
+# .env must define SAFE_OWNER, DEPLOYER_PRIVATE_KEY, and the per-network token
+# addresses: USDC_ADDRESS (Base) / USDC_ADDRESS_CELO (Celo), and optionally
+# PERKOS_ADDRESS / PERKOS_ADDRESS_CELO (else rewardToken=0x0, set later).
+# DISTRIBUTOR_ADDRESS + ETHERSCAN_API_KEY optional. See .env.example.
 set -euo pipefail
 
 NETWORK="${1:-}"
-if [[ "$NETWORK" != "sepolia" && "$NETWORK" != "mainnet" ]]; then
-  echo "usage: $0 sepolia | mainnet" >&2
-  exit 2
-fi
+case "$NETWORK" in
+  sepolia | base | mainnet | celo) ;;
+  *) echo "usage: $0 sepolia | base | celo" >&2; exit 2 ;;
+esac
 [[ -f .env ]] || { echo "error: .env not found. Copy .env.example to .env and fill it in." >&2; exit 2; }
 
 set -a
@@ -22,18 +25,24 @@ set +a
 
 : "${SAFE_OWNER:?SAFE_OWNER required}"
 : "${DEPLOYER_PRIVATE_KEY:?DEPLOYER_PRIVATE_KEY required}"
-: "${USDC_ADDRESS:?USDC_ADDRESS required}"
-# $PERKOS is OPTIONAL at deploy — it's bought later by the buyback. Leave unset
-# (defaults to 0x0) and wire it with setRewardToken when it exists; USDC payment
-# claims work from day one.
-PERKOS_ADDRESS="${PERKOS_ADDRESS:-0x0000000000000000000000000000000000000000}"
 DISTRIBUTOR_ADDRESS="${DISTRIBUTOR_ADDRESS:-0x0000000000000000000000000000000000000000}"
+ZERO=0x0000000000000000000000000000000000000000
 
-if [[ "$NETWORK" == "sepolia" ]]; then
-  RPC=base_sepolia
-else
-  RPC=base
-  read -r -p "Deploy to Base MAINNET? owner=$SAFE_OWNER (type 'YES' to confirm): " confirm
+MAINNET=0
+case "$NETWORK" in
+  sepolia)
+    RPC=base_sepolia; LABEL="Base Sepolia"
+    USDC="${USDC_ADDRESS:?USDC_ADDRESS required}"; PERKOS="${PERKOS_ADDRESS:-$ZERO}" ;;
+  base | mainnet)
+    RPC=base; LABEL="Base MAINNET"; MAINNET=1
+    USDC="${USDC_ADDRESS:?USDC_ADDRESS required}"; PERKOS="${PERKOS_ADDRESS:-$ZERO}" ;;
+  celo)
+    RPC=celo; LABEL="Celo MAINNET"; MAINNET=1
+    USDC="${USDC_ADDRESS_CELO:?USDC_ADDRESS_CELO required}"; PERKOS="${PERKOS_ADDRESS_CELO:-$ZERO}" ;;
+esac
+
+if [[ "$MAINNET" == 1 ]]; then
+  read -r -p "Deploy to $LABEL? owner=$SAFE_OWNER usdc=$USDC reward=$PERKOS (type 'YES'): " confirm
   [[ "$confirm" == "YES" ]] || { echo "aborted."; exit 1; }
 fi
 
@@ -48,4 +57,4 @@ forge script script/DeployClaimVault.s.sol:DeployClaimVault \
   --private-key "$DEPLOYER_PRIVATE_KEY" \
   $VERIFY \
   --sig 'run(address,address,address,address)' \
-  "$SAFE_OWNER" "$USDC_ADDRESS" "$PERKOS_ADDRESS" "$DISTRIBUTOR_ADDRESS"
+  "$SAFE_OWNER" "$USDC" "$PERKOS" "$DISTRIBUTOR_ADDRESS"
