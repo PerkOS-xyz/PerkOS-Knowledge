@@ -1,0 +1,8 @@
+# Foundry
+/out/
+/cache/
+/broadcast/
+# Toolchain libs — restore with `forge install` (or copy openzeppelin-contracts-upgradeable + forge-std)
+/lib/
+# Secrets
+.env
