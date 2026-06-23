@@ -1,5 +1,6 @@
 'use client';
 
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useEffect, useState } from 'react';
 import { useAccount } from 'wagmi';
 
@@ -74,7 +75,7 @@ function short(id: string | null) {
 }
 
 export default function DashboardClient() {
-  const { address } = useAccount();
+  const { address, isConnected } = useAccount();
   const [usage, setUsage] = useState<Usage | null>(null);
   const [credits, setCredits] = useState<Credits['account'] | null>(null);
   const [error, setError] = useState('');
@@ -101,25 +102,53 @@ export default function DashboardClient() {
     return () => { active = false; };
   }, [address]);
 
-  if (error) return <p className="body">{error}</p>;
-  if (!usage) return <p className="body">Loading live dashboard data…</p>;
+  // The wallet bar lives in the nav on every state, so it's always clear which
+  // wallet (if any) this dashboard is showing — its balance, deposits, and
+  // claims all key off it. showBalance=false: we surface the USDC credit
+  // balance below, not the wallet's native gas balance.
+  const nav = (
+    <nav className="dashNav">
+      <a href="/" className="brand"><span className="orb" /> PerkOS Knowledge</a>
+      <div className="dashLinks" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <a href="/admin">Admin</a>
+        <a href="/llms.txt">llms.txt</a>
+        <ConnectButton accountStatus="address" chainStatus="icon" showBalance={false} />
+      </div>
+    </nav>
+  );
+
+  // Not connected → don't spin on "Loading…" forever; tell them to connect.
+  if (!isConnected || !address) {
+    return (
+      <main className="dashShell">
+        {nav}
+        <section className="dashHero">
+          <p className="eyebrow">User dashboard</p>
+          <h1>Connect your wallet.</h1>
+          <p className="lead">Connect the wallet your agents bill and earn from — its credit balance, earnings, deposits, and claims show up here.</p>
+          <div style={{ marginTop: 20 }}><ConnectButton /></div>
+        </section>
+      </main>
+    );
+  }
+
+  if (error) return <main className="dashShell">{nav}<p className="body">{error}</p></main>;
+  if (!usage) return <main className="dashShell">{nav}<p className="body">Loading live dashboard data…</p></main>;
 
   const lastUpdate = usage.knowledge.lastKnowledgeUpdate
     ? new Date(usage.knowledge.lastKnowledgeUpdate).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
     : 'No sync yet';
   const cur = credits?.currency ?? 'USDC';
+  const shortAddr = `${address.slice(0, 6)}…${address.slice(-4)}`;
 
   return (
     <main className="dashShell">
-      <nav className="dashNav">
-        <a href="/" className="brand"><span className="orb" /> PerkOS Knowledge</a>
-        <div className="dashLinks"><a href="/admin">Admin</a><a href="/llms.txt">llms.txt</a></div>
-      </nav>
+      {nav}
 
       <section className="dashHero">
-        <p className="eyebrow">User dashboard</p>
+        <p className="eyebrow">User dashboard · <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', opacity: 0.85 }}>{shortAddr}</span></p>
         <h1>Your agents&apos; knowledge earnings.</h1>
-        <p className="lead">Credit balance, what your agents earned providing research, and what they spent querying — live.</p>
+        <p className="lead">Credit balance, what your agents earned providing research, and what they spent querying — live for <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{shortAddr}</span>.</p>
       </section>
 
       <section className="metricsGrid">
