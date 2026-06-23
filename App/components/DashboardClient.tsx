@@ -1,7 +1,7 @@
 'use client';
 
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAccount } from 'wagmi';
 
 import ClaimPanel from './ClaimPanel';
@@ -80,6 +80,19 @@ export default function DashboardClient() {
   const [credits, setCredits] = useState<Credits['account'] | null>(null);
   const [error, setError] = useState('');
 
+  // Re-fetchable on its own so a deposit/claim can refresh the balance + ledger
+  // without a full reload (best-effort — the dashboard renders without it).
+  const loadCredits = useCallback(async () => {
+    if (!address) return;
+    try {
+      const res = await fetch(`/api/credits/${address}`, { cache: 'no-store' });
+      const data: Credits | null = res.ok ? await res.json() : null;
+      if (data?.ok) setCredits(data.account);
+    } catch {
+      /* ignore */
+    }
+  }, [address]);
+
   useEffect(() => {
     let active = true;
     if (!address) return;
@@ -93,14 +106,10 @@ export default function DashboardClient() {
       .then((data) => { if (active) setUsage(data); })
       .catch(() => { if (active) setError('Unable to load live dashboard data.'); });
 
-    // Credits/earnings are best-effort — the dashboard still renders without them.
-    fetch(`/api/credits/${address}`, { cache: 'no-store' })
-      .then(async (res) => (res.ok ? res.json() : null))
-      .then((data: Credits | null) => { if (active && data?.ok) setCredits(data.account); })
-      .catch(() => {});
+    loadCredits();
 
     return () => { active = false; };
-  }, [address]);
+  }, [address, loadCredits]);
 
   // The wallet bar lives in the nav on every state, so it's always clear which
   // wallet (if any) this dashboard is showing — its balance, deposits, and
@@ -158,7 +167,7 @@ export default function DashboardClient() {
         <article className="metric"><span>Knowledge items</span><strong>{usage.knowledge.knowledgeItemsAvailable}</strong></article>
       </section>
 
-      <DepositPanel />
+      <DepositPanel onDeposited={loadCredits} />
 
       <ClaimPanel />
 
