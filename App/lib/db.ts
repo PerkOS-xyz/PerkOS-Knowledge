@@ -334,6 +334,20 @@ export async function ensureSchema(client: Client) {
   await client.query(`CREATE INDEX IF NOT EXISTS credit_ledger_agent_idx ON credit_ledger (agent_id, created_at DESC)`);
   await client.query(`CREATE INDEX IF NOT EXISTS agent_billing_wallet_idx ON agent_billing (lower(wallet))`);
 
+  // System error log — captured server-side failures (deposit/settle, query,
+  // claim, …) surfaced in the admin so ops can see what's breaking without SSH.
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS system_errors (
+      id bigserial PRIMARY KEY,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      scope text NOT NULL,
+      severity text NOT NULL DEFAULT 'error',
+      message text NOT NULL,
+      context jsonb
+    )
+  `);
+  await client.query(`CREATE INDEX IF NOT EXISTS system_errors_created_idx ON system_errors (created_at DESC)`);
+
   // Provider payouts (F4 settlement) — on-chain USDC transfers treasury->provider.
   await client.query(`
     CREATE TABLE IF NOT EXISTS settlements (

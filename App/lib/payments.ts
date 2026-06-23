@@ -8,6 +8,12 @@
  * Networks: Base + Celo mainnet, both USDC (6-dec). The asset/payTo go in the
  * x402 paymentRequirements; the payer signs a gasless authorization that Stack
  * settles.
+ *
+ * Facilitator endpoints are the x402-standard `/verify` + `/settle` (NOT
+ * `/api/v2/x402/*` — that route's request schema validates x402Version as a
+ * string while its version check compares it as a number, so it rejects every
+ * payload with "expected string, received number"; `/verify` + `/settle` accept
+ * the standard `{ x402Version: 1, paymentPayload, paymentRequirements }`).
  */
 import { parseUnits } from "viem";
 
@@ -107,7 +113,7 @@ async function callFacilitator(path: string, payload: unknown, timeoutMs = 12000
 
 /** Verify (no settlement) a payment via Stack. */
 export async function verifyViaStack(paymentPayload: unknown, paymentRequirements: unknown) {
-  const { httpOk, status, data } = await callFacilitator("/api/v2/x402/verify", {
+  const { httpOk, status, data } = await callFacilitator("/verify", {
     x402Version: 1,
     paymentPayload,
     paymentRequirements,
@@ -119,9 +125,10 @@ export async function verifyViaStack(paymentPayload: unknown, paymentRequirement
   };
 }
 
-/** Verify + settle a payment on-chain via Stack. */
+/** Verify + settle a payment on-chain via Stack. `status`/`raw` are returned for
+ *  error logging (the full facilitator response when a settle is rejected). */
 export async function settleViaStack(paymentPayload: unknown, paymentRequirements: unknown) {
-  const { httpOk, status, data } = await callFacilitator("/api/v2/x402/settle", {
+  const { httpOk, status, data } = await callFacilitator("/settle", {
     x402Version: 1,
     paymentPayload,
     paymentRequirements,
@@ -131,6 +138,12 @@ export async function settleViaStack(paymentPayload: unknown, paymentRequirement
     transaction: (data.transaction as string) ?? null,
     payer: (data.payer as string) ?? null,
     network: (data.network as string) ?? null,
-    error: (data.errorReason as string) ?? (httpOk ? null : `HTTP ${status}`),
+    error:
+      (data.errorReason as string) ??
+      (data.error as string) ??
+      (data.message as string) ??
+      (httpOk ? null : `HTTP ${status}`),
+    status,
+    raw: data,
   };
 }
