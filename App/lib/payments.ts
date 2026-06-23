@@ -113,6 +113,18 @@ async function callFacilitator(path: string, payload: unknown, timeoutMs = 12000
     });
     const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     return { httpOk: res.ok, status: res.status, data };
+  } catch (e) {
+    // Network error or timeout (AbortError). Return a HANDLED failure instead of
+    // throwing — a throw here surfaces as an unhelpful HTTP 500 to the depositor.
+    // Settle does an on-chain transfer (Celo has slower finality than Base), so
+    // a timeout here usually means "still settling", not "failed".
+    const reason =
+      e instanceof Error && e.name === "AbortError"
+        ? `facilitator timeout after ${timeoutMs}ms`
+        : e instanceof Error
+          ? e.message
+          : "facilitator error";
+    return { httpOk: false, status: 0, data: { errorReason: reason } as Record<string, unknown> };
   } finally {
     clearTimeout(t);
   }
@@ -135,11 +147,13 @@ export async function verifyViaStack(paymentPayload: unknown, paymentRequirement
 /** Verify + settle a payment on-chain via Stack. `status`/`raw` are returned for
  *  error logging (the full facilitator response when a settle is rejected). */
 export async function settleViaStack(paymentPayload: unknown, paymentRequirements: unknown) {
+  // 60s: settle broadcasts + waits for an on-chain USDC transfer; Celo finality
+  // is slower than Base, so the 12s default aborted Celo deposits (HTTP 500).
   const { httpOk, status, data } = await callFacilitator("/settle", {
     x402Version: 1,
     paymentPayload,
     paymentRequirements,
-  });
+  }, 60000);
   return {
     ok: httpOk && data.success === true,
     transaction: (data.transaction as string) ?? null,
