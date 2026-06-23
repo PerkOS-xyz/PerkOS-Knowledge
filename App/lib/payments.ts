@@ -19,9 +19,16 @@ import { parseUnits } from "viem";
 
 export type PayNetwork = "base" | "celo";
 
-export const NETWORKS: Record<PayNetwork, { chainId: number; usdc: string; decimals: number; x402: string }> = {
-  base: { chainId: 8453, usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", decimals: 6, x402: "base" },
-  celo: { chainId: 42220, usdc: "0xcebA9300f2b948710d2653dD7B07f33A8B32118C", decimals: 6, x402: "celo" },
+// `name`/`version` are the on-chain EIP-712 domain of each USDC (verified live):
+// Base USDC = "USD Coin"/"2", Celo USDC = "USDC"/"2". They MUST match the token
+// contract exactly — the payer signs the EIP-3009 authorization against this
+// domain and the facilitator verifies it, so a wrong name = invalid signature.
+export const NETWORKS: Record<
+  PayNetwork,
+  { chainId: number; usdc: string; decimals: number; x402: string; name: string; version: string }
+> = {
+  base: { chainId: 8453, usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", decimals: 6, x402: "base", name: "USD Coin", version: "2" },
+  celo: { chainId: 42220, usdc: "0xcebA9300f2b948710d2653dD7B07f33A8B32118C", decimals: 6, x402: "celo", name: "USDC", version: "2" },
 };
 
 export function isPayNetwork(n: unknown): n is PayNetwork {
@@ -76,7 +83,7 @@ export function buildPaymentRequirements(net: PayNetwork, amount: number, resour
     payTo: treasuryPayTo(),
     maxTimeoutSeconds: 120,
     asset: n.usdc,
-    extra: { name: "USD Coin", version: "2" },
+    extra: { name: n.name, version: n.version },
   };
 }
 
