@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { WalletClient } from 'viem';
+import { getAddress, type WalletClient } from 'viem';
 import { useAccount, useSwitchChain, useWalletClient } from 'wagmi';
 import { wrapFetchWithPayment } from 'x402-fetch';
 
@@ -48,22 +48,27 @@ async function signX402Payment(
   const nonce = randomNonce();
   const value = BigInt(req.maxAmountRequired);
   const authorization = {
-    from: payer,
-    to: req.payTo as `0x${string}`,
+    from: getAddress(payer),
+    to: getAddress(req.payTo),
     value,
     validAfter,
     validBefore,
     nonce,
   };
+  // Replicate x402's signAuthorization EXACTLY: call signTypedData(data) with NO
+  // `account` field, letting the wallet sign with its connected account. Passing
+  // an explicit `account` made a smart wallet (EIP-7702) try to EXECUTE the
+  // transferWithAuthorization as a transaction (from its EOA signer, no gas)
+  // instead of signing the EIP-3009 auth gaslessly. (Base worked via x402-fetch,
+  // which signs this way; Celo uses this manual path, so it must match.)
   const signature = await (walletClient.signTypedData as (a: unknown) => Promise<`0x${string}`>)({
-    account: payer,
+    types: TRANSFER_WITH_AUTHORIZATION_TYPES,
     domain: {
       name: req.extra?.name || 'USDC',
       version: req.extra?.version || '2',
       chainId,
-      verifyingContract: req.asset as `0x${string}`,
+      verifyingContract: getAddress(req.asset),
     },
-    types: TRANSFER_WITH_AUTHORIZATION_TYPES,
     primaryType: 'TransferWithAuthorization',
     message: authorization,
   });
