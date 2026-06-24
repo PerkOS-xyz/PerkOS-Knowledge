@@ -30,6 +30,9 @@ export type TokenomicsConfig = {
   feeRewardBps: number;
   /** Researcher's share of the reward pool (bps); requester gets the rest. */
   rewardResearcherBps: number;
+  /** Platform's share of the BOUGHT $PERKOS (bps); the rest drops to users.
+   *  Applied at buyback/distribution time, not at accrual. Default 4000 = 40%. */
+  rewardPlatformBps: number;
   buybackEnabled: boolean;
   /** Min accrued reward pool (USDC) before a buyback epoch fires. */
   buybackThreshold: number;
@@ -55,6 +58,7 @@ export function defaultTokenomics(): TokenomicsConfig {
     feePlatformBps: 2000,
     feeRewardBps: 500,
     rewardResearcherBps: 6000,
+    rewardPlatformBps: 4000,
     buybackEnabled: false,
     buybackThreshold: 100,
     updatedBy: null,
@@ -68,7 +72,7 @@ export async function loadTokenomics(client: Client): Promise<TokenomicsConfig> 
   const r = await client.query(
     `SELECT mode, price_public, price_private, price_premium, price_enterprise,
             fee_provider_bps, fee_platform_bps, fee_reward_bps, reward_researcher_bps,
-            buyback_enabled, buyback_threshold, updated_by, updated_at
+            reward_platform_bps, buyback_enabled, buyback_threshold, updated_by, updated_at
        FROM tokenomics_config WHERE id = 'default'`,
   );
   const row = r.rows[0];
@@ -87,6 +91,7 @@ export async function loadTokenomics(client: Client): Promise<TokenomicsConfig> 
     feePlatformBps: num(row.fee_platform_bps, d.feePlatformBps),
     feeRewardBps: num(row.fee_reward_bps, d.feeRewardBps),
     rewardResearcherBps: num(row.reward_researcher_bps, d.rewardResearcherBps),
+    rewardPlatformBps: num(row.reward_platform_bps, d.rewardPlatformBps),
     buybackEnabled: row.buyback_enabled ?? d.buybackEnabled,
     buybackThreshold: num(row.buyback_threshold, d.buybackThreshold),
     updatedBy: row.updated_by ?? null,
@@ -101,6 +106,7 @@ export type TokenomicsPatch = Partial<{
   feePlatformBps: number;
   feeRewardBps: number;
   rewardResearcherBps: number;
+  rewardPlatformBps: number;
   buybackEnabled: boolean;
   buybackThreshold: number;
 }>;
@@ -132,6 +138,7 @@ export async function saveTokenomics(
     feePlatformBps: patch.feePlatformBps ?? cur.feePlatformBps,
     feeRewardBps: patch.feeRewardBps ?? cur.feeRewardBps,
     rewardResearcherBps: patch.rewardResearcherBps ?? cur.rewardResearcherBps,
+    rewardPlatformBps: patch.rewardPlatformBps ?? cur.rewardPlatformBps,
     buybackEnabled: patch.buybackEnabled ?? cur.buybackEnabled,
     buybackThreshold: patch.buybackThreshold ?? cur.buybackThreshold,
   };
@@ -139,12 +146,12 @@ export async function saveTokenomics(
     `INSERT INTO tokenomics_config
        (id, mode, price_public, price_private, price_premium, price_enterprise,
         fee_provider_bps, fee_platform_bps, fee_reward_bps, reward_researcher_bps,
-        buyback_enabled, buyback_threshold, updated_by, updated_at)
-     VALUES ('default',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now())
+        reward_platform_bps, buyback_enabled, buyback_threshold, updated_by, updated_at)
+     VALUES ('default',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, now())
      ON CONFLICT (id) DO UPDATE SET
        mode=$1, price_public=$2, price_private=$3, price_premium=$4, price_enterprise=$5,
        fee_provider_bps=$6, fee_platform_bps=$7, fee_reward_bps=$8, reward_researcher_bps=$9,
-       buyback_enabled=$10, buyback_threshold=$11, updated_by=$12, updated_at=now()`,
+       reward_platform_bps=$10, buyback_enabled=$11, buyback_threshold=$12, updated_by=$13, updated_at=now()`,
     [
       merged.mode,
       merged.prices.public,
@@ -155,6 +162,7 @@ export async function saveTokenomics(
       merged.feePlatformBps,
       merged.feeRewardBps,
       merged.rewardResearcherBps,
+      merged.rewardPlatformBps,
       merged.buybackEnabled,
       merged.buybackThreshold,
       updatedBy,
@@ -213,15 +221,18 @@ export async function accrueReward(
     requesterWallet: string | null;
     researcherWallets: string[];
     researcherBps: number;
+    /** Chain the query paid on — the reward buys that chain's $PERKOS. */
+    chain?: string;
   },
 ): Promise<void> {
   if (!(input.amount > 0)) return;
   await client.query(
     `INSERT INTO reward_pool
-       (request_id, amount, currency, requester_wallet, researcher_wallets, researcher_bps, status)
-     VALUES ($1,$2,$3,$4,$5::jsonb,$6,'pending')`,
+       (request_id, chain, amount, currency, requester_wallet, researcher_wallets, researcher_bps, status)
+     VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,'pending')`,
     [
       input.requestId,
+      input.chain ?? "base",
       input.amount,
       input.currency,
       input.requesterWallet,

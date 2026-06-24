@@ -384,12 +384,14 @@ export async function ensureSchema(client: Client) {
       fee_platform_bps integer,
       fee_reward_bps integer,
       reward_researcher_bps integer,
+      reward_platform_bps integer,
       buyback_enabled boolean,
       buyback_threshold numeric,
       updated_by text,
       updated_at timestamptz NOT NULL DEFAULT now()
     )
   `);
+  await client.query(`ALTER TABLE tokenomics_config ADD COLUMN IF NOT EXISTS reward_platform_bps integer`);
 
   // Recognized platform fee per paid query (the 20% take) — PerkOS revenue.
   await client.query(`
@@ -412,6 +414,7 @@ export async function ensureSchema(client: Client) {
     CREATE TABLE IF NOT EXISTS reward_pool (
       id bigserial PRIMARY KEY,
       request_id text,
+      chain text NOT NULL DEFAULT 'base',
       amount numeric NOT NULL,
       currency text NOT NULL DEFAULT 'USDC',
       requester_wallet text,
@@ -422,7 +425,10 @@ export async function ensureSchema(client: Client) {
       created_at timestamptz NOT NULL DEFAULT now()
     )
   `);
-  await client.query(`CREATE INDEX IF NOT EXISTS reward_pool_status_idx ON reward_pool (status, created_at)`);
+  // Per-chain: the reward buys that chain's $PERKOS (Base reward USDC → Base
+  // $PERKOS, Celo → Celo). Existing rows default to 'base'.
+  await client.query(`ALTER TABLE reward_pool ADD COLUMN IF NOT EXISTS chain text NOT NULL DEFAULT 'base'`);
+  await client.query(`CREATE INDEX IF NOT EXISTS reward_pool_status_idx ON reward_pool (status, chain, created_at)`);
 
   // Claim distributions (pull model) — each row is a Merkle root the platform
   // posts to PerkosClaimVault. tree_dump holds the StandardMerkleTree so any

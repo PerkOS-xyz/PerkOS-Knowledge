@@ -172,6 +172,7 @@ export async function POST(request: Request) {
         requesterWallet: access.wallet,
         researcherWallets: attr.creditedByWallet.map((c) => c.wallet),
         researcherBps: cfg.rewardResearcherBps,
+        chain: payChain,
       });
     } catch {
       // attribution/credit/fee accounting is secondary to the response — swallow.
