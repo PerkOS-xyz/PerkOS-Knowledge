@@ -69,8 +69,15 @@ DASHBOARD (reworded)
 - **Phase B — monthly drop *calculation* (dry-run):** `lib/rewardsDrop.ts` → `computeMonthlyDrop(client, {year, month, chain})` returns `{ budgetUsdc, platformBps, perWallet: [{wallet, activity, sharePct}] }`. Admin endpoint `GET /api/admin/rewards/drop?month=&chain=` shows exactly what a drop *would* pay — no trade, no writes. Safe to ship + run anytime.
 - **Phase C — buyback + distribute (real money):** per chain, swap budget→$PERKOS, split 40/60, write `token_rewards`, mark `reward_pool` distributed, fund the vault, post the root. Behind the `buybackEnabled` + treasury-key gates; admin-triggered, dry-run flag honored.
   - **Swap via the Uniswap Trading API** (decided 2026-06-24) — NOT hand-rolled v3/v4 router calldata. The hosted API (`https://trade-api.gateway.uniswap.org/v1`, `x-api-key`) supports **both Base and Celo** and **v2/v3/v4** classic AMM swaps, so one flow covers Base-v3 + Celo-v4 without us touching the v4 Universal Router / PoolManager / PoolKey+hooks. Flow per chain: `POST /v1/check_approval` (Permit2 for USDC; sign the returned approval tx once) → `POST /v1/quote` (`type:EXACT_INPUT`, `routing:CLASSIC` to exclude gasless UniswapX, `tokenIn`=USDC, `tokenOut`=$PERKOS, `amount`=budget, `swapper`=`0x3f0D`, `tokenInChainId`=`tokenOutChainId`=8453/42220) → `POST /v1/swap` returns a ready tx `{to,data,value,chainId,gasLimit}` → treasury `0x3f0D` signs + broadcasts (gasful) → receives $PERKOS. Slippage handled by the API (`slippageTolerance`). We still record the swap tx hash + a min-out guard before distributing.
-- **Phase D — drop UX:** reword `ClaimPanel` to a "$PERKOS drop" with a first-time toast.
-- **Phase E — automate:** a month-end cron once B+C are proven by hand (slippage + per-month caps).
+- **Phase D — drop UX (DONE):** `ClaimPanel` reads as a "$PERKOS drop earned for using PerkOS"; per-chain rows show the highlighted `… $PERKOS drop`.
+- **Orchestrator (DONE):** `App/scripts/monthly-drop.mjs` chains all legs for one chain. Run from the App dir (needs viem), keys read locally (admin token + Uniswap key from `.env`, treasury key from `Contracts/.env`):
+  ```
+  node scripts/monthly-drop.mjs --chain=base             # DRY-RUN: budget + quote + split
+  node scripts/monthly-drop.mjs --chain=base --apply     # real: swap → distribute → build root → fund vault → post root
+  node scripts/monthly-drop.mjs --chain=celo --apply
+  ```
+  Dry-run validated (budget 0.3 USDC → quote 342,606 $PERKOS, platform 0.12 / users 0.18). `--apply` sends real txs; the treasury signer (`0x3f0D`) needs native gas per chain. Run per chain at month end when there's accrued reward.
+- **Phase E — automate (later):** wrap the orchestrator in a month-end cron once a real drop has been run by hand (add slippage + per-month USDC caps first).
 
 ## 6. New inputs / config
 
