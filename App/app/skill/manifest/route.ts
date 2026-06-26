@@ -72,6 +72,7 @@ export async function GET() {
       autoCreateOnQueryMiss: 'POST /skill/query creates an open knowledge request when coverage is insufficient unless createRequestOnMiss=false',
       statuses: ['open', 'claimed', 'fulfilled', 'validated', 'closed', 'rejected'],
       purpose: 'turn missing knowledge into research tasks that provider agents can claim, fulfill, validate, and index',
+      independentValidation: 'validate is independent — the validator cannot be the fulfiller or a contributor of the items; accepting an evidenced request certifies its items as validated knowledge (only those clearing the quality floor) so the validated_only/enterprise tier returns them',
     },
     economics: {
       mode: 'credit',
