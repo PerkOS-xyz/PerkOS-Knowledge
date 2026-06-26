@@ -8,14 +8,27 @@
  * Networks: Base + Celo mainnet, both USDC (6-dec). The asset/payTo go in the
  * x402 paymentRequirements; the payer signs a gasless authorization that Stack
  * settles.
+ *
+ * Facilitator endpoints are the x402-standard `/verify` + `/settle` (NOT
+ * `/api/v2/x402/*` — that route's request schema validates x402Version as a
+ * string while its version check compares it as a number, so it rejects every
+ * payload with "expected string, received number"; `/verify` + `/settle` accept
+ * the standard `{ x402Version: 1, paymentPayload, paymentRequirements }`).
  */
 import { parseUnits } from "viem";
 
 export type PayNetwork = "base" | "celo";
 
-export const NETWORKS: Record<PayNetwork, { chainId: number; usdc: string; decimals: number; x402: string }> = {
-  base: { chainId: 8453, usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", decimals: 6, x402: "base" },
-  celo: { chainId: 42220, usdc: "0xcebA9300f2b948710d2653dD7B07f33A8B32118C", decimals: 6, x402: "celo" },
+// `name`/`version` are the on-chain EIP-712 domain of each USDC (verified live):
+// Base USDC = "USD Coin"/"2", Celo USDC = "USDC"/"2". They MUST match the token
+// contract exactly — the payer signs the EIP-3009 authorization against this
+// domain and the facilitator verifies it, so a wrong name = invalid signature.
+export const NETWORKS: Record<
+  PayNetwork,
+  { chainId: number; usdc: string; decimals: number; x402: string; name: string; version: string }
+> = {
+  base: { chainId: 8453, usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", decimals: 6, x402: "base", name: "USD Coin", version: "2" },
+  celo: { chainId: 42220, usdc: "0xcebA9300f2b948710d2653dD7B07f33A8B32118C", decimals: 6, x402: "celo", name: "USDC", version: "2" },
 };
 
 export function isPayNetwork(n: unknown): n is PayNetwork {
@@ -70,7 +83,7 @@ export function buildPaymentRequirements(net: PayNetwork, amount: number, resour
     payTo: treasuryPayTo(),
     maxTimeoutSeconds: 120,
     asset: n.usdc,
-    extra: { name: "USD Coin", version: "2" },
+    extra: { name: n.name, version: n.version },
   };
 }
 
@@ -100,6 +113,18 @@ async function callFacilitator(path: string, payload: unknown, timeoutMs = 12000
     });
     const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     return { httpOk: res.ok, status: res.status, data };
+  } catch (e) {
+    // Network error or timeout (AbortError). Return a HANDLED failure instead of
+    // throwing — a throw here surfaces as an unhelpful HTTP 500 to the depositor.
+    // Settle does an on-chain transfer (Celo has slower finality than Base), so
+    // a timeout here usually means "still settling", not "failed".
+    const reason =
+      e instanceof Error && e.name === "AbortError"
+        ? `facilitator timeout after ${timeoutMs}ms`
+        : e instanceof Error
+          ? e.message
+          : "facilitator error";
+    return { httpOk: false, status: 0, data: { errorReason: reason } as Record<string, unknown> };
   } finally {
     clearTimeout(t);
   }
@@ -107,7 +132,7 @@ async function callFacilitator(path: string, payload: unknown, timeoutMs = 12000
 
 /** Verify (no settlement) a payment via Stack. */
 export async function verifyViaStack(paymentPayload: unknown, paymentRequirements: unknown) {
-  const { httpOk, status, data } = await callFacilitator("/api/v2/x402/verify", {
+  const { httpOk, status, data } = await callFacilitator("/verify", {
     x402Version: 1,
     paymentPayload,
     paymentRequirements,
@@ -119,18 +144,27 @@ export async function verifyViaStack(paymentPayload: unknown, paymentRequirement
   };
 }
 
-/** Verify + settle a payment on-chain via Stack. */
+/** Verify + settle a payment on-chain via Stack. `status`/`raw` are returned for
+ *  error logging (the full facilitator response when a settle is rejected). */
 export async function settleViaStack(paymentPayload: unknown, paymentRequirements: unknown) {
-  const { httpOk, status, data } = await callFacilitator("/api/v2/x402/settle", {
+  // 60s: settle broadcasts + waits for an on-chain USDC transfer; Celo finality
+  // is slower than Base, so the 12s default aborted Celo deposits (HTTP 500).
+  const { httpOk, status, data } = await callFacilitator("/settle", {
     x402Version: 1,
     paymentPayload,
     paymentRequirements,
-  });
+  }, 60000);
   return {
     ok: httpOk && data.success === true,
     transaction: (data.transaction as string) ?? null,
     payer: (data.payer as string) ?? null,
     network: (data.network as string) ?? null,
-    error: (data.errorReason as string) ?? (httpOk ? null : `HTTP ${status}`),
+    error:
+      (data.errorReason as string) ??
+      (data.error as string) ??
+      (data.message as string) ??
+      (httpOk ? null : `HTTP ${status}`),
+    status,
+    raw: data,
   };
 }

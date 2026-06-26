@@ -49,7 +49,14 @@ describe("buildPaymentRequirements", () => {
     expect(r.asset.toLowerCase()).toBe(CELO_USDC);
     expect(r.maxAmountRequired).toBe("2000000");
     expect(r.payTo).toBe("0x3f0D7b9916212fA0A9Ac0EF8f72a25EB56F7046C");
-    expect(r.extra).toEqual({ name: "USD Coin", version: "2" });
+    // Celo USDC's on-chain EIP-712 domain name is "USDC" (not "USD Coin").
+    expect(r.extra).toEqual({ name: "USDC", version: "2" });
+  });
+
+  it("uses each token's real EIP-712 domain name (Base = USD Coin)", () => {
+    process.env.KNOWLEDGE_X402_PAY_TO = "0x3f0D7b9916212fA0A9Ac0EF8f72a25EB56F7046C";
+    const base = buildPaymentRequirements("base", 1, "https://x/api/deposit");
+    expect(base.extra).toEqual({ name: "USD Coin", version: "2" });
   });
 });
 

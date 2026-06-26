@@ -52,18 +52,21 @@ export default function ClaimPanel() {
 
   return (
     <section className="dashPanel wide" style={{ border: '1px solid rgba(124,247,200,0.25)' }}>
-      <p className="eyebrow">Claim · pull your earnings + $PERKOS</p>
-      <h2>Claimable</h2>
+      <p className="eyebrow">Claim · earnings + your $PERKOS drop</p>
+      <h2>Your rewards</h2>
       {!hasVault ? (
-        <p className="body">The claim vault isn&apos;t deployed yet — your earnings accrue and become claimable here once it&apos;s live.</p>
+        <p className="body">The claim vault isn&apos;t live yet — your earnings and $PERKOS accrue and become claimable here once it&apos;s up.</p>
       ) : claimable.length === 0 ? (
-        <p className="body">Nothing to claim yet. Earnings are paid out on the chain a consumer paid on; when a distribution includes you, each chain&apos;s claim shows here.</p>
+        <p className="body">Nothing to claim yet. The more you use PerkOS, the bigger your <strong>$PERKOS drop</strong> — earned just for using the platform. When a distribution includes you, it shows up here to claim.</p>
       ) : (
-        <div style={{ display: 'grid', gap: 10, marginTop: 8 }}>
-          {claimable.map((c) => (
-            <ClaimChainRow key={c.chain} vault={vault as `0x${string}`} cc={c} account={address as `0x${string}`} onClaimed={load} />
-          ))}
-        </div>
+        <>
+          <p className="body" style={{ fontSize: 13, opacity: 0.85 }}>Your USDC earnings + your <strong>$PERKOS drop</strong> for using PerkOS — claim anytime, on each chain.</p>
+          <div style={{ display: 'grid', gap: 10, marginTop: 8 }}>
+            {claimable.map((c) => (
+              <ClaimChainRow key={c.chain} vault={vault as `0x${string}`} cc={c} account={address as `0x${string}`} onClaimed={load} />
+            ))}
+          </div>
+        </>
       )}
     </section>
   );
@@ -91,8 +94,8 @@ function ClaimChainRow({ vault, cc, account, onClaimed }: { vault: `0x${string}`
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)' }}>
       <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
         <span style={{ textTransform: 'capitalize', fontWeight: 700 }}>{cc.chain}</span>
-        <span className="body" style={{ fontSize: 13 }}>{formatUnits(owedUsdc, 6)} USDC</span>
-        <span className="body" style={{ fontSize: 13, opacity: 0.8 }}>{formatUnits(owedReward, 18)} PERKOS</span>
+        {owedUsdc > 0n ? <span className="body" style={{ fontSize: 13 }}>{formatUnits(owedUsdc, 6)} USDC</span> : null}
+        {owedReward > 0n ? <span className="body" style={{ fontSize: 13, color: '#7cf7c8' }}>{Math.round(Number(formatUnits(owedReward, 18))).toLocaleString()} $PERKOS drop</span> : null}
         {!cc.claim!.posted ? <span className="body" style={{ fontSize: 11, opacity: 0.6 }}>root pending on-chain</span> : null}
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

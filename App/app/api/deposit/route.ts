@@ -14,6 +14,7 @@
  */
 import { credit } from "../../../lib/credits";
 import { withDb } from "../../../lib/db";
+import { logError } from "../../../lib/errlog";
 import {
   buildPaymentRequirements,
   decodePaymentHeader,
@@ -69,6 +70,32 @@ export async function POST(request: Request) {
   const requirements = buildPaymentRequirements(net, amount, RESOURCE);
   const settle = await settleViaStack(payload, requirements);
   if (!settle.ok) {
+    // Capture the full facilitator interaction so the admin error log shows
+    // exactly what PerkOS Stack rejected (signature redacted — keep the shapes).
+    const pl = payload as Record<string, unknown>;
+    const inner = (pl.payload ?? {}) as Record<string, unknown>;
+    await withDb((c) =>
+      logError(c, {
+        scope: "deposit.settle",
+        message: settle.error || `settle failed (HTTP ${settle.status})`,
+        context: {
+          net,
+          amount,
+          wallet,
+          httpStatus: settle.status,
+          stackResponse: settle.raw,
+          paymentRequirements: requirements,
+          payloadShape: {
+            x402Version: pl.x402Version,
+            scheme: pl.scheme,
+            network: pl.network,
+            payloadKeys: Object.keys(inner),
+            authorization: inner.authorization,
+            signaturePresent: Boolean(inner.signature),
+          },
+        },
+      }),
+    ).catch(() => {});
     return Response.json({ ok: false, error: "settlement_failed", reason: settle.error }, { status: 402 });
   }
 
@@ -90,16 +117,19 @@ export async function POST(request: Request) {
         settle.transaction,
       ]);
       if (dup.rowCount) {
-        const r = await c.query(`SELECT balance::float8 b FROM agent_accounts WHERE lower(wallet)=lower($1)`, [payee]);
+        const r = await c.query(`SELECT balance::float8 b FROM agent_accounts WHERE lower(wallet)=lower($1) AND chain=$2`, [payee, net]);
         return { balance: r.rows[0]?.b ?? 0, deduped: true };
       }
     }
+    // Credit the deposit ON THE CHAIN it was paid — that's the chain those
+    // credits will earn providers on when spent.
     const balance = await credit(c, {
       wallet: payee,
       amount,
       reason: "deposit",
       deposited: true,
       x402ReceiptId: settle.transaction,
+      chain: net,
     });
     return { balance, deduped: false };
   });

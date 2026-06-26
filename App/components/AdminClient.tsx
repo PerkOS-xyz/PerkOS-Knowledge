@@ -1,12 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { useAccount } from 'wagmi';
+import VaultOwnerPanel from './VaultOwnerPanel';
 
 type Policy = { tier: string; price: { amount: string; currency: string } };
 type Cfg = { mode: string; policies: Policy[]; env: Record<string, string> };
 type BillingRow = { agent_id: string; wallet: string | null; exempt: boolean; role: string; note: string | null; updated_at: string | null };
 type Settlement = { id: string; provider_wallet: string; amount: number; currency: string; status: string; tx_hash: string | null; created_at: string | null };
+type SysErr = { id: string; createdAt: string | null; scope: string; severity: string; message: string; context: unknown };
 type Tk = {
   mode: string;
   prices: { public: number; private: number; premium: number; enterprise: number };
@@ -38,6 +40,8 @@ export default function AdminClient() {
   const [tk, setTk] = useState<Tk | null>(null);
   const [tkSum, setTkSum] = useState<TkSummary | null>(null);
   const [tkForm, setTkForm] = useState<Tk | null>(null);
+  const [errors, setErrors] = useState<SysErr[]>([]);
+  const [openErr, setOpenErr] = useState<string | null>(null);
   const [msg, setMsg] = useState('');
 
   const adminFetch = useCallback(
@@ -48,16 +52,18 @@ export default function AdminClient() {
 
   const refresh = useCallback(async () => {
     if (!address) return;
-    const [c, b, s, t] = await Promise.all([
+    const [c, b, s, t, e] = await Promise.all([
       adminFetch('/api/admin/x402/config').then((r) => (r.ok ? r.json() : null)).catch(() => null),
       adminFetch('/api/admin/billing').then((r) => (r.ok ? r.json() : null)).catch(() => null),
       adminFetch('/api/admin/settle').then((r) => (r.ok ? r.json() : null)).catch(() => null),
       adminFetch('/api/admin/tokenomics').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      adminFetch('/api/admin/errors?limit=50').then((r) => (r.ok ? r.json() : null)).catch(() => null),
     ]);
     if (c?.ok) setCfg(c);
     if (b?.ok) setBilling(b.rows || []);
     if (s?.ok) { setSettlements(s.settlements || []); setOnChain(Boolean(s.onChain)); }
     if (t?.ok) { setTk(t.config); setTkForm(t.config); setTkSum(t.summary); }
+    if (e?.ok) setErrors(e.errors || []);
     if (!c?.ok && !b?.ok && !t?.ok) setMsg('Admin access denied — connect an allowlisted wallet.');
   }, [address, adminFetch]);
 
@@ -188,6 +194,46 @@ export default function AdminClient() {
             </p>
           </div>
         ) : <p className="body">Loading tokenomics…</p>}
+      </section>
+
+      {/* Vault owner ops — only renders when the connected wallet is the vault owner */}
+      <VaultOwnerPanel />
+
+      {/* System error log */}
+      <section className="dashPanel wide">
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+          <div>
+            <p className="eyebrow">System · error log</p>
+            <h2>Recent errors {errors.length ? <span style={{ fontSize: 13, opacity: 0.6 }}>({errors.length})</span> : null}</h2>
+          </div>
+          <button style={btn} onClick={refresh}>Refresh</button>
+        </div>
+        <p className="body" style={{ fontSize: 12, opacity: 0.7 }}>Server-side failures (deposit/settle, billing, claims). Click a row to expand its context.</p>
+        {errors.length ? (
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 8 }}>
+            <thead><tr><th style={th}>When</th><th style={th}>Scope</th><th style={th}>Severity</th><th style={th}>Message</th></tr></thead>
+            <tbody>
+              {errors.map((e) => (
+                <Fragment key={e.id}>
+                  <tr style={{ cursor: 'pointer' }} onClick={() => setOpenErr(openErr === e.id ? null : e.id)}>
+                    <td style={td}>{e.createdAt ? new Date(e.createdAt).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'medium' }) : '—'}</td>
+                    <td style={{ ...td, ...mono }}>{e.scope}</td>
+                    <td style={{ ...td, color: e.severity === 'error' ? '#e0795f' : e.severity === 'warn' ? '#e0a05f' : '#8aa' }}>{e.severity}</td>
+                    <td style={td}>{e.message.length > 90 ? `${e.message.slice(0, 90)}…` : e.message}</td>
+                  </tr>
+                  {openErr === e.id ? (
+                    <tr>
+                      <td style={{ ...td, ...mono, whiteSpace: 'pre-wrap', fontSize: 11, opacity: 0.85 }} colSpan={4}>
+                        {e.message}
+                        {e.context ? `\n\n${JSON.stringify(e.context, null, 2)}` : ''}
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        ) : <p className="body">No errors logged. 🎉</p>}
       </section>
 
       {/* Whitelist */}

@@ -281,7 +281,8 @@ export async function ensureSchema(client: Client) {
   // Prepaid credit balance per OWNER wallet — the money lives at the wallet.
   await client.query(`
     CREATE TABLE IF NOT EXISTS agent_accounts (
-      wallet text PRIMARY KEY,
+      wallet text NOT NULL,
+      chain text NOT NULL DEFAULT 'base',
       balance numeric NOT NULL DEFAULT 0,
       currency text NOT NULL DEFAULT 'USDC',
       total_earned numeric NOT NULL DEFAULT 0,
@@ -291,6 +292,12 @@ export async function ensureSchema(client: Client) {
       created_at timestamptz NOT NULL DEFAULT now()
     )
   `);
+  // Per-chain balances: balance/earnings live per (wallet, chain) so the chain a
+  // consumer pays on is the chain the provider earns on. Migrate the legacy
+  // single-wallet PK → a (wallet, chain) unique key (existing rows default 'base').
+  await client.query(`ALTER TABLE agent_accounts ADD COLUMN IF NOT EXISTS chain text NOT NULL DEFAULT 'base'`);
+  await client.query(`ALTER TABLE agent_accounts DROP CONSTRAINT IF EXISTS agent_accounts_pkey`);
+  await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS agent_accounts_wallet_chain_uidx ON agent_accounts (wallet, chain)`);
   // Per-agent billing config = the whitelist. exempt agents query for free;
   // role marks providers (earn) vs consumers. PerkOS internal / research
   // agents are exempt:true, role 'provider' or 'both'.
@@ -311,6 +318,7 @@ export async function ensureSchema(client: Client) {
     CREATE TABLE IF NOT EXISTS credit_ledger (
       id bigserial PRIMARY KEY,
       wallet text NOT NULL,
+      chain text NOT NULL DEFAULT 'base',
       agent_id text,
       kind text NOT NULL,
       amount numeric NOT NULL,
@@ -321,9 +329,24 @@ export async function ensureSchema(client: Client) {
       created_at timestamptz NOT NULL DEFAULT now()
     )
   `);
+  await client.query(`ALTER TABLE credit_ledger ADD COLUMN IF NOT EXISTS chain text NOT NULL DEFAULT 'base'`);
   await client.query(`CREATE INDEX IF NOT EXISTS credit_ledger_wallet_idx ON credit_ledger (lower(wallet), created_at DESC)`);
   await client.query(`CREATE INDEX IF NOT EXISTS credit_ledger_agent_idx ON credit_ledger (agent_id, created_at DESC)`);
   await client.query(`CREATE INDEX IF NOT EXISTS agent_billing_wallet_idx ON agent_billing (lower(wallet))`);
+
+  // System error log — captured server-side failures (deposit/settle, query,
+  // claim, …) surfaced in the admin so ops can see what's breaking without SSH.
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS system_errors (
+      id bigserial PRIMARY KEY,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      scope text NOT NULL,
+      severity text NOT NULL DEFAULT 'error',
+      message text NOT NULL,
+      context jsonb
+    )
+  `);
+  await client.query(`CREATE INDEX IF NOT EXISTS system_errors_created_idx ON system_errors (created_at DESC)`);
 
   // Provider payouts (F4 settlement) — on-chain USDC transfers treasury->provider.
   await client.query(`
@@ -361,12 +384,14 @@ export async function ensureSchema(client: Client) {
       fee_platform_bps integer,
       fee_reward_bps integer,
       reward_researcher_bps integer,
+      reward_platform_bps integer,
       buyback_enabled boolean,
       buyback_threshold numeric,
       updated_by text,
       updated_at timestamptz NOT NULL DEFAULT now()
     )
   `);
+  await client.query(`ALTER TABLE tokenomics_config ADD COLUMN IF NOT EXISTS reward_platform_bps integer`);
 
   // Recognized platform fee per paid query (the 20% take) — PerkOS revenue.
   await client.query(`
@@ -389,6 +414,7 @@ export async function ensureSchema(client: Client) {
     CREATE TABLE IF NOT EXISTS reward_pool (
       id bigserial PRIMARY KEY,
       request_id text,
+      chain text NOT NULL DEFAULT 'base',
       amount numeric NOT NULL,
       currency text NOT NULL DEFAULT 'USDC',
       requester_wallet text,
@@ -399,7 +425,10 @@ export async function ensureSchema(client: Client) {
       created_at timestamptz NOT NULL DEFAULT now()
     )
   `);
-  await client.query(`CREATE INDEX IF NOT EXISTS reward_pool_status_idx ON reward_pool (status, created_at)`);
+  // Per-chain: the reward buys that chain's $PERKOS (Base reward USDC → Base
+  // $PERKOS, Celo → Celo). Existing rows default to 'base'.
+  await client.query(`ALTER TABLE reward_pool ADD COLUMN IF NOT EXISTS chain text NOT NULL DEFAULT 'base'`);
+  await client.query(`CREATE INDEX IF NOT EXISTS reward_pool_status_idx ON reward_pool (status, chain, created_at)`);
 
   // Claim distributions (pull model) — each row is a Merkle root the platform
   // posts to PerkosClaimVault. tree_dump holds the StandardMerkleTree so any
@@ -429,11 +458,18 @@ export async function ensureSchema(client: Client) {
   // the claim roll-up reads it. Empty until the buyback is wired.
   await client.query(`
     CREATE TABLE IF NOT EXISTS token_rewards (
-      wallet text PRIMARY KEY,
+      wallet text NOT NULL,
+      chain text NOT NULL DEFAULT 'base',
       cumulative_perkos numeric NOT NULL DEFAULT 0,
       updated_at timestamptz NOT NULL DEFAULT now()
     )
   `);
+  // Per-chain: a wallet's $PERKOS drop is segregated by the chain it was bought
+  // on (Base $PERKOS ≠ Celo $PERKOS), claimed from that chain's vault. Migrate
+  // the old wallet-PK shape to a (wallet, chain) unique index.
+  await client.query(`ALTER TABLE token_rewards ADD COLUMN IF NOT EXISTS chain text NOT NULL DEFAULT 'base'`);
+  await client.query(`ALTER TABLE token_rewards DROP CONSTRAINT IF EXISTS token_rewards_pkey`);
+  await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS token_rewards_wallet_chain_uidx ON token_rewards (wallet, chain)`);
 
 
   await client.query(`CREATE INDEX IF NOT EXISTS research_items_agents_idx ON research_items USING gin (agents)`);
