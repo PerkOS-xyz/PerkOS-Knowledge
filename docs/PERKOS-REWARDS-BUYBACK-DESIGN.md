@@ -67,7 +67,8 @@ DASHBOARD (reworded)
 
 - **Phase A — accounting (DONE, not deployed):** `reward_pool.chain` + thread `payChain`; `rewardPlatformBps` (40%) in config + DB. Reversible, no on-chain.
 - **Phase B — monthly drop *calculation* (dry-run):** `lib/rewardsDrop.ts` → `computeMonthlyDrop(client, {year, month, chain})` returns `{ budgetUsdc, platformBps, perWallet: [{wallet, activity, sharePct}] }`. Admin endpoint `GET /api/admin/rewards/drop?month=&chain=` shows exactly what a drop *would* pay — no trade, no writes. Safe to ship + run anytime.
-- **Phase C — buyback + distribute (real money):** per chain, swap budget→$PERKOS (Base v3 / Celo v4), split 40/60, write `token_rewards`, mark `reward_pool` distributed, fund the vault, post the root. Behind the `buybackEnabled` + treasury-key gates; admin-triggered, dry-run flag honored.
+- **Phase C — buyback + distribute (real money):** per chain, swap budget→$PERKOS, split 40/60, write `token_rewards`, mark `reward_pool` distributed, fund the vault, post the root. Behind the `buybackEnabled` + treasury-key gates; admin-triggered, dry-run flag honored.
+  - **Swap via the Uniswap Trading API** (decided 2026-06-24) — NOT hand-rolled v3/v4 router calldata. The hosted API (`https://trade-api.gateway.uniswap.org/v1`, `x-api-key`) supports **both Base and Celo** and **v2/v3/v4** classic AMM swaps, so one flow covers Base-v3 + Celo-v4 without us touching the v4 Universal Router / PoolManager / PoolKey+hooks. Flow per chain: `POST /v1/check_approval` (Permit2 for USDC; sign the returned approval tx once) → `POST /v1/quote` (`type:EXACT_INPUT`, `routing:CLASSIC` to exclude gasless UniswapX, `tokenIn`=USDC, `tokenOut`=$PERKOS, `amount`=budget, `swapper`=`0x3f0D`, `tokenInChainId`=`tokenOutChainId`=8453/42220) → `POST /v1/swap` returns a ready tx `{to,data,value,chainId,gasLimit}` → treasury `0x3f0D` signs + broadcasts (gasful) → receives $PERKOS. Slippage handled by the API (`slippageTolerance`). We still record the swap tx hash + a min-out guard before distributing.
 - **Phase D — drop UX:** reword `ClaimPanel` to a "$PERKOS drop" with a first-time toast.
 - **Phase E — automate:** a month-end cron once B+C are proven by hand (slippage + per-month caps).
 
@@ -75,16 +76,16 @@ DASHBOARD (reworded)
 
 | Thing | Value / source |
 |---|---|
-| Base pool | Uniswap **v3**, USDC/$PERKOS, fee **3000** (0.3%). $PERKOS Base `0xF714…9BA3`. |
-| Celo pool | Uniswap **v4**, USDC/$PERKOS, fee **3000** (0.3%). $PERKOS Celo `0xb7Ba…6A46`. Needs PoolKey: tickSpacing + hooks addr. |
-| Routers | Base v3 SwapRouter; Celo v4 Universal Router + PoolManager (addresses TBD). |
+| **Uniswap Trading API key** | `x-api-key` from hub.uniswap.org / the Uniswap dashboard. The one external thing we still need. |
+| Base | chainId 8453; USDC `0x8335…2913`; $PERKOS `0xF714…9BA3`. API picks the v3 route. |
+| Celo | chainId 42220; USDC `0xcebA…118C`; $PERKOS `0xb7Ba…6A46`. API picks the v4 route. |
 | `rewardPlatformBps` | 4000 (40% platform / 60% users). |
-| Treasury signer | `KNOWLEDGE_TREASURY_PRIVATE_KEY` = `0x3f0D`; needs native gas per chain. |
+| Treasury signer | `KNOWLEDGE_TREASURY_PRIVATE_KEY` = `0x3f0D`; needs native gas per chain (Base ETH + Celo CELO). |
 
 ## 7. Risks
 
-- **Celo is Uniswap v4** — different from Base v3 (PoolManager + Universal Router + PoolKey/hooks). The swap leg must branch per chain; v4 is the harder one. Get the v4 PoolKey + router right (and confirm a USDC/$PERKOS v4 pool with liquidity exists at 0.3%).
-- **Slippage / thin pools:** one monthly buy can move a small pool. Quote first, `minAmountOut`, optionally split the buy.
+- **Uniswap Trading API dependency:** a hosted API (key, rate limits, uptime). For a once-a-month buyback that's fine; if it's ever down we just run the drop later. Removes the v3-vs-v4 integration risk entirely (the API abstracts both). Keep a fallback note: the same swap could be done with on-chain routers if needed.
+- **Slippage / thin pools:** one monthly buy can move a small pool. The API quotes + applies `slippageTolerance`; still cap per-month USDC and refuse if the quote's price impact is above a threshold. Optionally split the buy.
 - **Price volatility:** show the **$PERKOS amount**, not a USD promise.
 - **Gas per chain:** treasury signer needs Base ETH + Celo CELO.
 - **Rounding:** floor each wallet's 18-dec share; keep the remainder in the platform cut (never over-allocate vs vault balance).
