@@ -55,19 +55,33 @@ export async function getAccessContext(client: Client, request: Request): Promis
     agentId = identity.rows[0]?.agent_id || null;
   }
 
-  // Only persist/use agent ids that are onboarded and active. Some runtimes
-  // (OpenClaw/Hermes/LLM gateways) naturally send an `x-agent-id` before the
-  // Knowledge service has onboarded that agent. Treat those callers as public
-  // consumers instead of letting FK-backed usage/request writes fail with 500s.
+  // Resolve the agent id against the `agents` table (the FK target for usage /
+  // attribution / receipt writes). Some runtimes (OpenClaw/Hermes/LLM gateways)
+  // send an `x-agent-id` before Knowledge has a row for that agent. If the
+  // caller also identifies a wallet, self-register it as a consumer so its
+  // usage + earnings attribution is actually captured (agents-in-the-market —
+  // a provisioned agent gets KNOWLEDGE_AGENT_ID + KNOWLEDGE_AGENT_WALLET and
+  // becomes a first-class consumer on its first paid query). Without a wallet,
+  // or for a disabled agent, treat the caller as a public consumer so FK-backed
+  // writes don't 500.
   if (agentId) {
-    const registered = await client.query(
-      `SELECT id
-       FROM agents
-       WHERE id = $1 AND status = 'active'
-       LIMIT 1`,
+    const existing = await client.query(
+      `SELECT status FROM agents WHERE id = $1 LIMIT 1`,
       [agentId]
     );
-    if (!registered.rowCount) agentId = null;
+    if (existing.rowCount) {
+      if (existing.rows[0].status !== 'active') agentId = null;
+    } else if (explicitAgentId && wallet) {
+      await client.query(
+        `INSERT INTO agents (id, display_name, agent_type, metadata)
+         VALUES ($1, $1, 'consumer', jsonb_build_object('self_registered', true, 'wallet', $2::text))
+         ON CONFLICT (id) DO NOTHING`,
+        [agentId, wallet]
+      );
+      // agentId now references an active 'consumer' row → attribution is captured.
+    } else {
+      agentId = null;
+    }
   }
 
   if (agentId) {
