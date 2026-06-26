@@ -112,4 +112,8 @@ const ph = await wallet.writeContract({ address: VAULT, abi: VAULT_ABI, function
 await pub.waitForTransactionReceipt({ hash: ph });
 console.log("posted root:", ph);
 
+// 7. mark the distribution posted (dashboard drops the "root pending on-chain" hint)
+const mp = await (await fetch(`${BASE_URL}/api/admin/claims/mark-posted`, { method: "POST", headers: AH, body: JSON.stringify({ chain: CHAIN, root: dist.root, txHash: ph }) })).json();
+if (!mp.ok) console.warn("mark-posted warning:", mp.error);
+
 console.log(`\n✅ drop complete — ${MONTH} / ${CHAIN}. Users can claim their $PERKOS from the dashboard.`);
