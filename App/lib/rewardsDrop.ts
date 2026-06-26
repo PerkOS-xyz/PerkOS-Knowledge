@@ -120,3 +120,72 @@ export async function computeMonthlyDrop(
     wallets,
   };
 }
+
+export type DropDistribution = {
+  month: string;
+  chain: string;
+  perkosBought: string;
+  platformPerkos: string;
+  userPerkos: string;
+  allocated: string;
+  walletCount: number;
+  rewardRowsMarked: number;
+};
+
+/**
+ * Distribute a completed buyback's $PERKOS for a month/chain — call AFTER the
+ * swap lands `perkosBoughtBaseUnits` $PERKOS (18-dec) in the treasury. Keeps the
+ * platform cut, credits each wallet's usage-weighted share into token_rewards
+ * (which `rollupEntries` turns into a claimable `cumReward`), and marks that
+ * month's pending reward_pool rows distributed. Integer math; the rounding
+ * remainder stays with the platform (never over-allocate vs what was bought).
+ *
+ * Idempotent guard is the caller's job (mark/record the buyback tx first) — this
+ * function is the accounting half only; it does no on-chain work.
+ */
+export async function distributeDrop(
+  client: Client,
+  opts: { month: string; chain: string; perkosBoughtBaseUnits: bigint },
+): Promise<DropDistribution> {
+  const { start, end } = monthRange(opts.month);
+  const chain = opts.chain === "celo" ? "celo" : "base";
+  const drop = await computeMonthlyDrop(client, { month: opts.month, chain });
+
+  const platformBps = BigInt(drop.platformBps);
+  const platformPerkos = (opts.perkosBoughtBaseUnits * platformBps) / 10000n;
+  const userPerkos = opts.perkosBoughtBaseUnits - platformPerkos;
+
+  // Integer pro-rata by activity. Scale floats to 1e6 fixed-point for the ratio.
+  const totalScaled = BigInt(Math.round(drop.totalActivity * 1e6));
+  let allocated = 0n;
+  for (const w of drop.wallets) {
+    if (totalScaled <= 0n) break;
+    const share = (userPerkos * BigInt(Math.round(w.activity * 1e6))) / totalScaled;
+    if (share <= 0n) continue;
+    allocated += share;
+    await client.query(
+      `INSERT INTO token_rewards (wallet, chain, cumulative_perkos)
+         VALUES (lower($1), $2, $3)
+       ON CONFLICT (wallet, chain)
+         DO UPDATE SET cumulative_perkos = token_rewards.cumulative_perkos + EXCLUDED.cumulative_perkos, updated_at = now()`,
+      [w.wallet, chain, share.toString()],
+    );
+  }
+
+  const marked = await client.query(
+    `UPDATE reward_pool SET status = 'distributed', epoch = $1
+       WHERE chain = $2 AND status = 'pending' AND created_at >= $3 AND created_at < $4`,
+    [opts.month, chain, start, end],
+  );
+
+  return {
+    month: opts.month,
+    chain,
+    perkosBought: opts.perkosBoughtBaseUnits.toString(),
+    platformPerkos: platformPerkos.toString(),
+    userPerkos: userPerkos.toString(),
+    allocated: allocated.toString(),
+    walletCount: drop.wallets.length,
+    rewardRowsMarked: marked.rowCount ?? 0,
+  };
+}

@@ -61,21 +61,37 @@ export function buildDistribution(entries: ClaimEntry[]): BuiltDistribution | nu
  * segregated by the chain the consumer paid on (`knowledge_attributions.chain`),
  * so each chain's distribution is independent — a provider claims their Base
  * earnings on Base and their Celo earnings on Celo, never the same amount twice.
- * cumReward stays 0 until the per-chain $PERKOS buyback is wired.
+ * cumReward is the wallet's cumulative $PERKOS drop on this chain (token_rewards,
+ * filled by the monthly usage-drop). A wallet may have USDC (earned), $PERKOS
+ * (drop), or both — a consumer who only spent has $PERKOS but no USDC — so we
+ * union both per-chain sources.
  */
 export async function rollupEntries(client: Client, chain: string): Promise<ClaimEntry[]> {
-  const r = await client.query(
-    `SELECT lower(provider_wallet) w, coalesce(sum(amount),0)::float8 e
-       FROM knowledge_attributions
-       WHERE lower(chain) = lower($1) AND provider_wallet IS NOT NULL
-       GROUP BY 1 HAVING sum(amount) > 0`,
-    [chain],
-  );
-  return (r.rows as { w: string; e: number }[]).map((row) => ({
-    wallet: row.w,
-    cumUsdc: usdcBaseUnits(row.e),
-    cumReward: 0n,
-  }));
+  const [usdc, reward] = await Promise.all([
+    client.query(
+      `SELECT lower(provider_wallet) w, coalesce(sum(amount),0)::float8 e
+         FROM knowledge_attributions
+         WHERE lower(chain) = lower($1) AND provider_wallet IS NOT NULL
+         GROUP BY 1 HAVING sum(amount) > 0`,
+      [chain],
+    ),
+    client.query(
+      `SELECT lower(wallet) w, cumulative_perkos::text p
+         FROM token_rewards WHERE chain = $1 AND cumulative_perkos > 0`,
+      [chain],
+    ),
+  ]);
+  const map = new Map<string, { cumUsdc: bigint; cumReward: bigint }>();
+  for (const row of usdc.rows as { w: string; e: number }[]) {
+    map.set(row.w, { cumUsdc: usdcBaseUnits(row.e), cumReward: 0n });
+  }
+  for (const row of reward.rows as { w: string; p: string }[]) {
+    const cur = map.get(row.w) ?? { cumUsdc: 0n, cumReward: 0n };
+    // cumulative_perkos is stored in 18-dec base units; floor to integer.
+    cur.cumReward = BigInt(String(row.p).split(".")[0] || "0");
+    map.set(row.w, cur);
+  }
+  return [...map.entries()].map(([wallet, x]) => ({ wallet, cumUsdc: x.cumUsdc, cumReward: x.cumReward }));
 }
 
 export async function persistDistribution(

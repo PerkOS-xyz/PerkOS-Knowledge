@@ -458,11 +458,18 @@ export async function ensureSchema(client: Client) {
   // the claim roll-up reads it. Empty until the buyback is wired.
   await client.query(`
     CREATE TABLE IF NOT EXISTS token_rewards (
-      wallet text PRIMARY KEY,
+      wallet text NOT NULL,
+      chain text NOT NULL DEFAULT 'base',
       cumulative_perkos numeric NOT NULL DEFAULT 0,
       updated_at timestamptz NOT NULL DEFAULT now()
     )
   `);
+  // Per-chain: a wallet's $PERKOS drop is segregated by the chain it was bought
+  // on (Base $PERKOS ≠ Celo $PERKOS), claimed from that chain's vault. Migrate
+  // the old wallet-PK shape to a (wallet, chain) unique index.
+  await client.query(`ALTER TABLE token_rewards ADD COLUMN IF NOT EXISTS chain text NOT NULL DEFAULT 'base'`);
+  await client.query(`ALTER TABLE token_rewards DROP CONSTRAINT IF EXISTS token_rewards_pkey`);
+  await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS token_rewards_wallet_chain_uidx ON token_rewards (wallet, chain)`);
 
 
   await client.query(`CREATE INDEX IF NOT EXISTS research_items_agents_idx ON research_items USING gin (agents)`);
