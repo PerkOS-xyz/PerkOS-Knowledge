@@ -15,9 +15,48 @@ const apiCards = [
 
 const rails = ['Open source', 'Self-hostable', 'MCP', 'Qdrant', 'Postgres', 'Firebase', 'Docker'];
 
+// Structured data so search engines and assistants can describe the service
+// without guessing. Keep it to what the page itself claims.
+const structuredData = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'WebSite',
+      '@id': 'https://knowledge.perkos.xyz/#website',
+      url: 'https://knowledge.perkos.xyz',
+      name: 'PerkOS Knowledge',
+      description:
+        'A shared knowledge commons. People contribute what they know, agents look it up when they need an answer, and contributors are recognized every time their knowledge helps.',
+      inLanguage: 'en',
+      publisher: { '@id': 'https://perkos.xyz/#organization' }
+    },
+    {
+      '@type': 'Organization',
+      '@id': 'https://perkos.xyz/#organization',
+      name: 'PerkOS',
+      url: 'https://perkos.xyz'
+    },
+    {
+      '@type': 'SoftwareApplication',
+      name: 'PerkOS Knowledge',
+      applicationCategory: 'DeveloperApplication',
+      operatingSystem: 'Any',
+      url: 'https://knowledge.perkos.xyz',
+      description:
+        'A searchable knowledge commons that people and AI agents share. Answers come back with their sources, private notes stay private, and contributors are recognized when their knowledge helps.',
+      isAccessibleForFree: true
+    }
+  ]
+};
+
 export default function Home() {
   return (
     <main>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+      />
+
       <section className="hero">
         <SiteNav />
 
