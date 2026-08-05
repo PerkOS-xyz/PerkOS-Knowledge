@@ -11,7 +11,11 @@ export default function SiteNav() {
 
   return (
     <nav className="nav siteNav">
-      <a href="/" className="brand"><span className="orb" /> PerkOS Knowledge</a>
+      <a href="/" className="brand" aria-label="PerkOS Knowledge">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/perkos-header.png" alt="PerkOS" width={82} height={28} className="brandLogo" />
+        <span className="brandSub">Knowledge</span>
+      </a>
       <div className="navActions">
         {allowed ? (
           <div className="headerMenu" aria-label="Authenticated navigation">

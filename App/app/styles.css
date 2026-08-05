@@ -27,6 +27,8 @@ main { overflow: hidden; }
 .nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 110px; }
 .brand, .status { display: inline-flex; align-items: center; gap: 10px; color: var(--muted); font-weight: 650; }
 .orb { width: 13px; height: 13px; border-radius: 99px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); box-shadow: 0 0 30px var(--accent); }
+.brandLogo { height: 28px; width: auto; display: block; filter: drop-shadow(0 8px 24px rgba(236, 27, 105, .3)); }
+.brandSub { color: var(--text); font-weight: 750; letter-spacing: -.01em; }
 .status { border: 1px solid var(--line); border-radius: 999px; padding: 10px 14px; background: rgba(255,255,255,.04); }
 .siteNav { gap: 18px; }
 .navActions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
