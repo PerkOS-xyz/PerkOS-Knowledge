@@ -1,19 +1,19 @@
 import SiteNav from '../components/SiteNav';
 
 const features = [
-  ['Agent-ready search', 'Expose curated research through fast APIs designed for autonomous agents, assistants, and PerkOS services.'],
-  ['Private by default', 'Separate internal knowledge, sanitized public briefs, and paid external access without leaking operational notes.'],
-  ['x402 access layer', 'Let outside agents pay for premium briefs, topic reports, and custom research through programmable payment rails.'],
-  ['Built for reuse', 'Research is curated once; internal and external agents can reuse the same source of truth.']
+  ['Ask in plain words', 'People and agents search the same commons and get answers back with the sources they came from.'],
+  ['Yours stays yours', 'Working notes stay private. You decide what becomes part of the shared commons, and nothing leaks by accident.'],
+  ['Contributors are recognized', 'Every time shared knowledge answers a question, the person who contributed it is credited and rewarded for it.'],
+  ['Checked before it spreads', 'Items are validated independently before they join the shared commons, so what circulates is worth trusting.']
 ];
 
 const apiCards = [
-  ['Search', '/knowledge/search', 'Query vectorized research across protocols, markets, agents, and PerkOS product notes.'],
-  ['Briefs', '/knowledge/brief/:agent', 'Generate role-specific briefs for builders, researchers, strategists, and operators.'],
-  ['Paid reports', '/paid/report/:slug', 'Serve sanitized premium research to external agents with x402 payment verification.']
+  ['Search', '/knowledge/search', 'Ask across everything the commons holds and get answers with their sources.'],
+  ['Briefs', '/knowledge/brief/:agent', 'A short brief written for whoever asked, whether that is a builder, a researcher, or an operator.'],
+  ['Reports', '/paid/report/:slug', 'Deeper reports for agents outside your team, so the people who wrote them get something back.']
 ];
 
-const rails = ['Base', 'Celo', 'Solana', 'x402', 'Firebase', 'Qdrant', 'Postgres', 'Docker'];
+const rails = ['Open source', 'Self-hostable', 'MCP', 'Qdrant', 'Postgres', 'Firebase', 'Docker'];
 
 export default function Home() {
   return (
@@ -23,10 +23,11 @@ export default function Home() {
 
         <div className="heroGrid">
           <div>
-            <p className="eyebrow">Live knowledge infrastructure for AI agents</p>
-            <h1>Research once. Let every agent know what matters.</h1>
+            <p className="eyebrow">A shared knowledge commons</p>
+            <h1>Write it down once. Every helper can use it.</h1>
             <p className="lead">
-              PerkOS Knowledge turns curated research into a reusable, searchable, paid knowledge layer for internal agents and external autonomous clients.
+              PerkOS Knowledge is a commons. People and teams contribute what they know, agents look it up when
+              they need an answer, and the people who contributed are recognized every time their knowledge helps.
             </p>
             <div className="actions">
               <a className="primary" href="/dashboard">Open dashboard</a>
@@ -37,12 +38,12 @@ export default function Home() {
           <div className="console" aria-label="API preview">
             <div className="consoleTop"><span /> <span /> <span /></div>
             <pre>{`GET /knowledge/search
-Authorization: x402 or internal token
+Authorization: Bearer <your key>
 
 {
-  "query": "ERC-8004 x402 agent payments",
-  "scope": "sanitized-public",
-  "results": "source-cited briefs"
+  "query": "how our refund policy works",
+  "scope": "shared",
+  "results": "answers, with their sources"
 }`}</pre>
           </div>
         </div>
@@ -54,7 +55,7 @@ Authorization: x402 or internal token
 
       <section className="section">
         <p className="eyebrow">Why it exists</p>
-        <h2>Knowledge that agents can actually call.</h2>
+        <h2>What a team knows should outlive the person who knew it.</h2>
         <div className="features">
           {features.map(([title, text]) => (
             <article className="card" key={title}>
@@ -68,9 +69,10 @@ Authorization: x402 or internal token
       <section className="section split">
         <div>
           <p className="eyebrow">Interfaces</p>
-          <h2>Internal memory, public products, paid access.</h2>
+          <h2>Private notes, shared answers, and a way to give back.</h2>
           <p className="body">
-            The service is designed to run as a Dockerized application behind a reverse proxy, with private data services isolated from the public internet.
+            It runs as a small Docker service behind your own proxy, with the data kept off the public internet.
+            The code is open, so you can run the whole thing yourself.
           </p>
         </div>
         <div className="apiList">
@@ -86,8 +88,8 @@ Authorization: x402 or internal token
 
       <section className="cta">
         <p className="eyebrow">PerkOS agent network</p>
-        <h2>A knowledge service that can become a skill, an API, and a market.</h2>
-        <p>Next: indexing pipeline, authenticated internal search, and x402-paid public endpoints.</p>
+        <h2>Knowledge that stays useful, and stays with the people who created it.</h2>
+        <p>Any agent that speaks MCP can read the commons, not just ours.</p>
       </section>
     </main>
   );
