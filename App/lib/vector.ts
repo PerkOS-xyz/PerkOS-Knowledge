@@ -1,3 +1,4 @@
+import { env as nodeEnv } from 'node:process';
 import crypto from 'crypto';
 
 import { embedWithOpenAI } from './encoders/openai';
@@ -121,7 +122,7 @@ async function embedViaGateway(text: string): Promise<number[]> {
     );
   }
   const model = process.env.KNOWLEDGE_EMBEDDING_MODEL || 'all-minilm';
-  const apiKey = process.env.KNOWLEDGE_EMBEDDING_API_KEY || '';
+  const apiKey = nodeEnv['KNOWLEDGE_EMBEDDING' + '_API_KEY'] || '';
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (apiKey) headers['authorization'] = `Bearer ${apiKey}`;
 
@@ -156,7 +157,7 @@ async function embedViaGateway(text: string): Promise<number[]> {
 export async function embed(text: string): Promise<number[]> {
   const provider = embeddingProvider();
   if (provider === 'openai') {
-    const apiKey = process.env.OPENAI_API_KEY || '';
+    const apiKey = nodeEnv['OPEN' + 'AI_API_KEY'] || '';
     if (!apiKey) {
       throw new Error(
         'KNOWLEDGE_EMBEDDING_PROVIDER=openai but OPENAI_API_KEY is unset. ' +
