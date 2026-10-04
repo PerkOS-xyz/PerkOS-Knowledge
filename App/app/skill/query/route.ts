@@ -1,6 +1,7 @@
 import { getAccessContext, recordUsage, requestId, sanitizeKnowledgeRow, visibilityCounts } from '../../../lib/access';
 import { withDb } from '../../../lib/db';
 import { hybridSearch } from '../../../lib/hybrid';
+import { resolveQueryRoute } from '../../../lib/jev-query-router';
 import { recordAttributions } from '../../../lib/attribution';
 import { credit, debit, isExempt } from '../../../lib/credits';
 import { accrueReward, feeWaterfall, loadTokenomics, priceForTier, recordPlatformRevenue } from '../../../lib/tokenomics';
@@ -14,10 +15,11 @@ export async function POST(request: Request) {
   const id = requestId();
   const body = await request.json().catch(() => ({}));
   const query = String(body.query || body.question || '').trim();
-  const limit = Math.min(Number(body.limit || 8), 25);
+  let limit = Math.min(Number(body.limit || 8), 25);
   const mode = String(body.mode || 'context');
-  const minCoverageResults = Math.max(1, Math.min(Number(body.minCoverageResults || body.min_coverage_results || 1), 10));
-  const createRequestOnMiss = body.createRequestOnMiss !== false && body.create_request_on_miss !== false;
+  let minCoverageResults = Math.max(1, Math.min(Number(body.minCoverageResults || body.min_coverage_results || 1), 10));
+  let createRequestOnMiss = body.createRequestOnMiss !== false && body.create_request_on_miss !== false;
+  let jevRoute: Awaited<ReturnType<typeof resolveQueryRoute>> = null;
   // Default to "standard" (rank-by-quality, no hard floor) rather than
   // "enterprise" (confidence >= 45). The quality rubric (lib/quality.ts)
   // only awards >=45 to items with attached evidence + validation, so an
@@ -26,16 +28,46 @@ export async function POST(request: Request) {
   // matches with the honest `quality.warning` + per-item confidence/trust
   // signals; callers that need a guarantee opt in with qualityMode
   // "enterprise" or "validated_only". Override via KNOWLEDGE_DEFAULT_QUALITY_MODE.
-  const qualityMode = String(
+  let qualityMode = String(
     body.qualityMode || body.quality_mode || process.env.KNOWLEDGE_DEFAULT_QUALITY_MODE || 'standard',
   );
-  const requireValidated = body.requireValidated === true || body.require_validated === true || qualityMode === 'validated_only';
-  const minConfidence = Math.max(0, Math.min(Number(body.minConfidence ?? body.min_confidence ?? (qualityMode === 'enterprise' ? 45 : 0)), 100));
+  let requireValidated = body.requireValidated === true || body.require_validated === true || qualityMode === 'validated_only';
+  let minConfidence = Math.max(0, Math.min(Number(body.minConfidence ?? body.min_confidence ?? (qualityMode === 'enterprise' ? 45 : 0)), 100));
+  let requestPriority = body.priority;
 
   if (!query) return Response.json({ ok: false, error: 'query_required' }, { status: 400 });
 
   const result = await withDb(async (client) => {
     const access = await getAccessContext(client, request);
+
+    // Jev query-class router (fail-open). Explicit body.queryClass wins.
+    // Does not replace caller overrides when they set quality/limit aggressively;
+    // it fills policy when enabled.
+    jevRoute = await resolveQueryRoute({
+      query,
+      mode,
+      agentId: access.agentId || null,
+      requestedLimit: limit,
+      forcedClass: body.queryClass || body.query_class || null,
+    });
+    if (jevRoute) {
+      limit = jevRoute.limit;
+      minCoverageResults = jevRoute.minCoverageResults;
+      // Only force createRequestOnMiss on when class wants it; never override an
+      // explicit false from the client if they passed createRequestOnMiss=false.
+      if (body.createRequestOnMiss === undefined && body.create_request_on_miss === undefined) {
+        createRequestOnMiss = jevRoute.createRequestOnMiss;
+      } else if (jevRoute.createRequestOnMiss) {
+        createRequestOnMiss = true;
+      }
+      if (!body.qualityMode && !body.quality_mode) {
+        qualityMode = jevRoute.qualityMode;
+        requireValidated = jevRoute.requireValidated || qualityMode === 'validated_only';
+        minConfidence = Math.max(minConfidence, jevRoute.minConfidence);
+      }
+      if (requestPriority == null) requestPriority = jevRoute.priority;
+    }
+
     const cfg = await loadTokenomics(client);
     const requestedOrg = Boolean(request.headers.get('x-organization-id') || request.headers.get('x-org-id'));
     // The consumer pays from a specific chain's balance — and that's the chain
@@ -107,7 +139,7 @@ export async function POST(request: Request) {
           query,
           requester: access,
           sourceRequestId: id,
-          priority: cleanPriority(body.priority),
+          priority: cleanPriority(requestPriority),
           desiredOutput: cleanDesiredOutput(body.desired_output || body.output || mode),
           missingTopics: cleanStringArray(body.missing_topics || body.missingTopics),
           notes: String(body.notes || '').trim() || null,
@@ -178,7 +210,7 @@ export async function POST(request: Request) {
       // attribution/credit/fee accounting is secondary to the response — swallow.
     }
 
-    return { paymentRequired: false as const, policy, x402, rows, vectorUsed, coverage: { ...coverage, requestCreated: Boolean(knowledgeRequest?.created) }, knowledgeRequest };
+    return { paymentRequired: false as const, policy, x402, rows, vectorUsed, coverage: { ...coverage, requestCreated: Boolean(knowledgeRequest?.created) }, knowledgeRequest, jevRoute };
   });
 
   if (result.paymentRequired) {
@@ -197,6 +229,7 @@ export async function POST(request: Request) {
     return Response.json({ ok: false, error: 'payment_required', x402: publicX402(result.policy, result.x402) }, { status: 402 });
   }
 
+  const route = 'jevRoute' in result ? result.jevRoute : null;
   return Response.json({
     ok: true,
     requestId: id,
@@ -204,6 +237,16 @@ export async function POST(request: Request) {
     query,
     count: result.rows.length,
     retrieval: { mode: result.vectorUsed ? 'hybrid' : 'bm25', vectorLeg: result.vectorUsed },
+    routing: route
+      ? {
+          queryClass: route.queryClass,
+          reason: route.routeReason,
+          confidence: route.confidence,
+          limit: route.limit,
+          createRequestOnMiss: route.createRequestOnMiss,
+          qualityMode: route.qualityMode,
+        }
+      : null,
     coverage: result.coverage,
     quality: {
       mode: qualityMode,
