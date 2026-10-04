@@ -112,6 +112,20 @@ describe("getX402Policy", () => {
     const exposed = getX402Policy();
     expect(exposed.paymentRequirements?.asset).toBe("0xUSDC");
   });
+  it("advertises Solana when KNOWLEDGE_X402_SOLANA=1", () => {
+    process.env.KNOWLEDGE_X402_CHAIN = "base";
+    process.env.KNOWLEDGE_X402_SOLANA = "1";
+    const p = getX402Policy();
+    expect(p.chains).toEqual(["base", "solana"]);
+    expect(p.networks).toContain("eip155:8453");
+    expect(p.networks).toContain("solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp");
+  });
+  it("KNOWLEDGE_X402_CHAINS overrides primary + solana flag", () => {
+    process.env.KNOWLEDGE_X402_CHAINS = "solana,base";
+    const p = getX402Policy();
+    expect(p.chains).toEqual(["solana", "base"]);
+    expect(p.networks[0]).toBe("solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp");
+  });
 });
 
 describe("inspectX402Request", () => {

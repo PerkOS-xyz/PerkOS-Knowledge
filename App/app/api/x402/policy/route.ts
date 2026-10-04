@@ -10,15 +10,18 @@ export async function GET() {
   // Prices come from the admin-editable tokenomics config (same source the
   // charging path uses), so a quoted price always matches what we charge.
   const cfg = await withDb((c) => loadTokenomics(c));
+  const policies = TIERS.map((t) => {
+    const p = getX402Policy('/skill/query', t, priceForTier(cfg, t));
+    p.mode = cfg.mode;
+    return p;
+  });
   return Response.json({
     ok: true,
     mode: cfg.mode,
-    policies: TIERS.map((t) => {
-      const p = getX402Policy('/skill/query', t, priceForTier(cfg, t));
-      p.mode = cfg.mode;
-      return p;
-    }),
+    chains: policies[0]?.chains ?? ['base'],
+    networks: policies[0]?.networks ?? ['eip155:8453'],
+    policies,
     headers: ['x-payment', 'x-x402-payment', 'x402-receipt'],
-    note: 'metered_free records usage/payment metadata without blocking requests. enforce mode returns HTTP 402 when payment is required and missing/invalid/underpaid. credit mode debits a prepaid balance. enterprise = validated-only knowledge. Settlement addresses remain hidden unless explicitly configured for public exposure.',
+    note: 'metered_free records usage/payment metadata without blocking requests. enforce mode returns HTTP 402 when payment is required and missing/invalid/underpaid. credit mode debits a prepaid balance. enterprise = validated-only knowledge. Settlement addresses remain hidden unless explicitly configured for public exposure. Set KNOWLEDGE_X402_SOLANA=1 or KNOWLEDGE_X402_CHAINS=base,solana to advertise Solana alongside Base.',
   });
 }
