@@ -15,6 +15,10 @@ export type X402Policy = {
     chain: string;
     token: string;
   };
+  /** Accepted payment rails (legacy short names + optional Solana). */
+  chains: string[];
+  /** CAIP-2 networks corresponding to `chains` (for x402 v2 clients). */
+  networks: string[];
   required: boolean;
   verification: {
     facilitatorConfigured: boolean;
@@ -74,6 +78,56 @@ export function resolveX402Tier(input?: { requestedTier?: string; hasOrganizatio
   return input?.hasOrganizationScope ? 'private' : 'public';
 }
 
+/** Short chain name → CAIP-2 network id used by x402 v2 clients / Stack. */
+export function chainToCaip2(chain: string): string {
+  const c = chain.trim().toLowerCase();
+  if (c === 'solana' || c === 'solana-mainnet' || c === 'solana:mainnet') {
+    return 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp';
+  }
+  if (c === 'solana-devnet' || c === 'solana:devnet') {
+    return 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1';
+  }
+  if (c === 'base') return 'eip155:8453';
+  if (c === 'base-sepolia') return 'eip155:84532';
+  if (c === 'celo') return 'eip155:42220';
+  if (c === 'avalanche' || c === 'avax') return 'eip155:43114';
+  if (c.startsWith('eip155:') || c.startsWith('solana:') || c.startsWith('stellar:')) return chain.trim();
+  return chain.trim();
+}
+
+/** Accepted payment chains. Default keeps current primary; add Solana via env. */
+export function getX402Chains(): string[] {
+  const raw = env('KNOWLEDGE_X402_CHAINS', '');
+  if (raw) {
+    return [...new Set(raw.split(',').map((s) => s.trim()).filter(Boolean))];
+  }
+  const primary = env('KNOWLEDGE_X402_CHAIN', 'base');
+  // Opt-in Solana advertisement without flipping the default rail.
+  if (boolEnv('KNOWLEDGE_X402_SOLANA', false) && primary !== 'solana' && !primary.startsWith('solana')) {
+    return [primary, 'solana'];
+  }
+  return [primary];
+}
+
+function tokenForChain(chain: string, fallback: string): string {
+  const c = chain.trim().toLowerCase();
+  if (c === 'solana' || c.startsWith('solana')) {
+    return env(
+      'KNOWLEDGE_X402_SOLANA_TOKEN',
+      'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+    );
+  }
+  return fallback;
+}
+
+function payToForChain(chain: string, fallback: string): string {
+  const c = chain.trim().toLowerCase();
+  if (c === 'solana' || c.startsWith('solana')) {
+    return env('KNOWLEDGE_X402_SOLANA_PAY_TO', fallback);
+  }
+  return fallback;
+}
+
 export function getX402Policy(endpoint = '/skill/query', tier: X402Tier = 'public', priceOverride?: string | number | null): X402Policy {
   // 'credit' = prepaid balance debit (off-chain), the PerkOS billing model.
   // 'enforce' = per-request on-chain x402 receipt (facilitator path).
@@ -86,16 +140,22 @@ export function getX402Policy(endpoint = '/skill/query', tier: X402Tier = 'publi
   const chain = env('KNOWLEDGE_X402_CHAIN', 'base');
   const token = env('KNOWLEDGE_X402_TOKEN', 'not_configured');
   const payTo = env('KNOWLEDGE_X402_PAY_TO', 'not_configured');
+  const chains = getX402Chains();
+  const networks = chains.map(chainToCaip2);
   const exposeSettlement = boolEnv('KNOWLEDGE_X402_EXPOSE_SETTLEMENT');
   const required = mode === 'enforce' && amount !== '0';
   const facilitatorConfigured = env('KNOWLEDGE_X402_FACILITATOR_URL', '') !== '';
+  const primaryToken = tokenForChain(chain, token);
+  const primaryPayTo = payToForChain(chain, payTo);
 
   return {
     mode,
     endpoint,
     tier,
     description: `${tier} knowledge query`,
-    price: { amount, currency, chain, token },
+    price: { amount, currency, chain, token: primaryToken },
+    chains,
+    networks,
     required,
     verification: {
       facilitatorConfigured,
@@ -104,10 +164,10 @@ export function getX402Policy(endpoint = '/skill/query', tier: X402Tier = 'publi
     },
     paymentRequirements: required ? {
       scheme: 'x402',
-      network: chain,
-      asset: exposeSettlement ? token : (token === 'not_configured' ? 'not_configured' : 'configured'),
+      network: chainToCaip2(chain),
+      asset: exposeSettlement ? primaryToken : (primaryToken === 'not_configured' ? 'not_configured' : 'configured'),
       amount,
-      payTo: exposeSettlement && payTo !== 'not_configured' ? payTo : null,
+      payTo: exposeSettlement && primaryPayTo !== 'not_configured' ? primaryPayTo : null,
       resource: endpoint,
       memo: `PerkOS Knowledge ${tier} query`,
     } : null,
